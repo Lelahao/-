@@ -31,7 +31,7 @@ async function createWindow(): Promise<void> {
     await mainWindow.loadURL(VITE_DEV_URL);
     mainWindow.webContents.openDevTools({ mode: "detach" });
   } else {
-    const indexHtml = path.join(__dirname, "..", "..", "dist", "index.html");
+    const indexHtml = path.join(__dirname, "..", "dist", "index.html");
     await mainWindow.loadFile(indexHtml);
   }
 

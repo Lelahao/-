@@ -40,8 +40,8 @@ export function getBackendExePath(): string {
 }
 
 /**
- * 仓库根目录（开发态自定位）。从 electron/dist/main.js 起算 ../../
+ * 仓库根目录（开发态：从 dist-electron/main.js 向上一条）。
  */
 export function getRepoRoot(): string {
-  return path.resolve(__dirname, "..", "..");
+  return path.resolve(__dirname, "..");
 }

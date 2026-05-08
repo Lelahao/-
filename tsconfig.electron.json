@@ -3,13 +3,13 @@
     "target": "ES2022",
     "module": "CommonJS",
     "moduleResolution": "node",
-    "outDir": "./dist",
-    "rootDir": ".",
+    "outDir": "./dist-electron",
+    "rootDir": "./electron",
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "include": ["./**/*.ts"],
-  "exclude": ["./dist"]
+  "include": ["electron/**/*.ts"],
+  "exclude": ["node_modules", "dist-electron"]
 }
