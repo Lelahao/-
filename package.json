@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "dev:backend": "python -m uvicorn server.main:app --host 127.0.0.1 --port 8765 --reload",
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
