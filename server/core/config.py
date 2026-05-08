@@ -16,4 +16,5 @@ def get_data_dir() -> Path:
 
 
 def get_db_path() -> Path:
-    return get_data_dir() / "paizuo_local.db"
+    """单库策略：与 Rust 双文件（paizuo_core + paizuo_round）合并为 paizuo.db。"""
+    return get_data_dir() / "paizuo.db"
