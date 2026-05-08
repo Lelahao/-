@@ -1,39 +1,49 @@
-"""活动日志写入（对应 app_db.rs log_activity）。"""
+"""导出记录（export_records）。"""
 
 from __future__ import annotations
 
 import json
 import sqlite3
 import uuid
+from typing import Any
+
+from server.core.database import now_ms
 
 
-def log_activity(
+def insert_export(
     conn: sqlite3.Connection,
-    created_at_ms: int,
     plan_id: str | None,
-    action: str,
-    payload: dict,
-) -> None:
+    format_name: str,
+    meta: dict[str, Any] | None,
+) -> dict[str, Any]:
     rid = str(uuid.uuid4())
+    t = now_ms()
     conn.execute(
         """
-        INSERT INTO activity_logs (id, plan_id, action, payload_json, created_at)
+        INSERT INTO export_records (id, plan_id, format, meta_json, created_at)
         VALUES (?1, ?2, ?3, ?4, ?5)
         """,
-        (rid, plan_id, action, json.dumps(payload, ensure_ascii=False), created_at_ms),
+        (
+            rid,
+            plan_id,
+            format_name,
+            json.dumps(meta or {}, ensure_ascii=False),
+            t,
+        ),
     )
+    return {"id": rid, "createdAt": t}
 
 
-def list_activity_logs(
+def list_exports(
     conn: sqlite3.Connection,
     plan_id: str | None = None,
     limit: int = 200,
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     limit = max(1, min(limit, 2000))
     if plan_id is not None:
         cur = conn.execute(
             """
-            SELECT id, plan_id, action, payload_json, created_at FROM activity_logs
+            SELECT id, plan_id, format, meta_json, created_at FROM export_records
             WHERE plan_id = ?1
             ORDER BY created_at DESC
             LIMIT ?2
@@ -43,7 +53,7 @@ def list_activity_logs(
     else:
         cur = conn.execute(
             """
-            SELECT id, plan_id, action, payload_json, created_at FROM activity_logs
+            SELECT id, plan_id, format, meta_json, created_at FROM export_records
             ORDER BY created_at DESC
             LIMIT ?1
             """,
@@ -53,8 +63,8 @@ def list_activity_logs(
         {
             "id": r["id"],
             "planId": r["plan_id"],
-            "action": r["action"],
-            "payloadJson": r["payload_json"],
+            "format": r["format"],
+            "metaJson": r["meta_json"],
             "createdAt": r["created_at"],
         }
         for r in cur.fetchall()
