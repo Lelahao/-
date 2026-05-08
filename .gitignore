@@ -4,6 +4,7 @@ dist-ssr
 dist-electron
 dist-backend
 release
+logs/
 .pytest_cache/
 *.egg-info/
 *.egg
