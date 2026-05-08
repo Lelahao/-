@@ -1,12 +1,12 @@
-import { invoke } from "@tauri-apps/api/core";
 import type { LayoutSnapshot } from "@/fullscreen/types";
+import * as layoutsApi from "@/api/layouts";
 
 const LS_KEY = "paizuo-round-layout-fallback";
 
 export async function saveLayoutSnapshot(snapshot: LayoutSnapshot): Promise<void> {
   const payload = JSON.stringify(snapshot);
   try {
-    await invoke("save_round_layout", { payload });
+    await layoutsApi.saveRoundLayout(snapshot);
   } catch {
     localStorage.setItem(LS_KEY, payload);
   }
@@ -14,11 +14,10 @@ export async function saveLayoutSnapshot(snapshot: LayoutSnapshot): Promise<void
 
 export async function loadLayoutSnapshot(): Promise<LayoutSnapshot | null> {
   try {
-    const raw = await invoke<string>("load_round_layout");
-    const parsed = JSON.parse(raw) as LayoutSnapshot;
+    const parsed = await layoutsApi.loadRoundLayout();
     if (parsed?.people?.length) return parsed;
   } catch {
-    // Web 开发模式或尚未初始化数据库
+    // 后端未启动或尚未初始化
   }
 
   const raw = localStorage.getItem(LS_KEY);
