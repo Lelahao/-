@@ -4,6 +4,15 @@ dist-ssr
 dist-electron
 dist-backend
 release
+.pytest_cache/
+*.egg-info/
+*.egg
+*.manifest
+*.spec~
+*.spec.swp
+*.log
+*.pfx
+*.p12
 *.local
 .DS_Store
 app-icon.png

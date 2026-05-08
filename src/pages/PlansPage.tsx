@@ -1,3 +1,14 @@
+import { useCallback, useEffect, useState } from "react";
+import { ApiError } from "@/api/client";
+import {
+  createPlan,
+  deletePlan,
+  getPlanDetail,
+  listPlans,
+  updatePlan,
+} from "@/api/plans";
+import type { PlanDetail, PlanRow, TableRow } from "@/lib/dbTypes";
+
 type PlanStatus = "已完成" | "进行中" | "草稿";
 
 type PlanDistributionSegment = {
@@ -17,6 +28,7 @@ type Plan = {
 };
 
 function formatDistribution(segments: PlanDistributionSegment[]): string {
+  if (segments.length === 0) return "—";
   return segments.map((s) => `${s.seats}人桌 × ${s.count}`).join(" / ");
 }
 
@@ -31,89 +43,59 @@ function statusBadgeClass(status: PlanStatus) {
   }
 }
 
-const STATS = [
-  {
-    label: "总方案数",
-    value: "24 个",
-    hint: "所有方案",
-    iconBg: "bg-sky-100 text-sky-700",
-    glyph: "总",
-  },
-  {
-    label: "本月新增",
-    value: "6 个",
-    hint: "较上月 +2",
-    iconBg: "bg-emerald-100 text-emerald-700",
-    glyph: "新",
-  },
-  {
-    label: "待处理异常",
-    value: "3 个",
-    hint: "需要处理",
-    iconBg: "bg-orange-100 text-orange-700",
-    glyph: "!",
-  },
-  {
-    label: "导出记录",
-    value: "18 条",
-    hint: "最近 30 天",
-    iconBg: "bg-violet-100 text-violet-700",
-    glyph: "出",
-  },
-] as const;
+function mapDisplayStatus(raw: string): PlanStatus {
+  const key = raw.trim();
+  const map: Record<string, PlanStatus> = {
+    draft: "草稿",
+    in_progress: "进行中",
+    active: "进行中",
+    done: "已完成",
+    completed: "已完成",
+    finished: "已完成",
+    草稿: "草稿",
+    进行中: "进行中",
+    已完成: "已完成",
+  };
+  return map[key] ?? "草稿";
+}
 
-const PLANS: Plan[] = [
-  {
-    id: "p1",
-    name: "2026客户接待方案",
-    status: "已完成",
-    tableCount: 4,
-    guestCount: 37,
-    updatedAt: "2026-05-07 18:32",
-    distribution: [
-      { seats: 6, count: 1 },
-      { seats: 9, count: 2 },
-      { seats: 13, count: 1 },
-    ],
-    owner: "李明轩",
-  },
-  {
-    id: "p2",
-    name: "季度商务接待",
-    status: "进行中",
-    tableCount: 5,
-    guestCount: 42,
-    updatedAt: "2026-05-06 11:08",
-    distribution: [
-      { seats: 8, count: 3 },
-      { seats: 10, count: 2 },
-    ],
-    owner: "王可",
-  },
-  {
-    id: "p3",
-    name: "管理层交流会",
-    status: "草稿",
-    tableCount: 2,
-    guestCount: 16,
-    updatedAt: "2026-05-05 09:15",
-    distribution: [{ seats: 8, count: 2 }],
-    owner: "陈珊",
-  },
-  {
-    id: "p4",
-    name: "家庭聚餐模板",
-    status: "已完成",
-    tableCount: 3,
-    guestCount: 22,
-    updatedAt: "2026-04-28 16:44",
-    distribution: [
-      { seats: 6, count: 2 },
-      { seats: 10, count: 1 },
-    ],
-    owner: "赵一宁",
-  },
-];
+function aggregateDistribution(tables: TableRow[]): PlanDistributionSegment[] {
+  const counts = new Map<number, number>();
+  for (const t of tables) {
+    const cap = t.capacity;
+    counts.set(cap, (counts.get(cap) ?? 0) + 1);
+  }
+  return Array.from(counts.entries())
+    .sort((a, b) => a[0] - b[0])
+    .map(([seats, count]) => ({ seats, count }));
+}
+
+function formatUpdatedAt(ms: number): string {
+  try {
+    return new Date(ms).toLocaleString("zh-CN", { hour12: false });
+  } catch {
+    return String(ms);
+  }
+}
+
+function toViewPlan(row: PlanRow, detail: PlanDetail): Plan {
+  return {
+    id: row.id,
+    name: row.name,
+    status: mapDisplayStatus(row.status),
+    tableCount: detail.tables.length,
+    guestCount: detail.people.length,
+    updatedAt: formatUpdatedAt(row.updatedAt),
+    distribution: aggregateDistribution(detail.tables),
+    owner: "—",
+  };
+}
+
+function errorMessage(e: unknown): string {
+  if (e instanceof ApiError) return e.message;
+  if (e instanceof Error) return e.message;
+  return "未知错误";
+}
 
 const ACTIVITIES = [
   {
@@ -156,6 +138,75 @@ const pageBtnPrimary =
   "inline-flex items-center justify-center gap-2 rounded-xl border border-orange-500/20 bg-orange-500 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-orange-600";
 
 export function PlansPage() {
+  const [plans, setPlans] = useState<Plan[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const refreshPlans = useCallback(async () => {
+    setError(null);
+    setLoading(true);
+    try {
+      const rows = await listPlans();
+      const details = await Promise.all(rows.map((r) => getPlanDetail(r.id)));
+      setPlans(rows.map((r, i) => toViewPlan(r, details[i]!)));
+    } catch (e) {
+      setError(errorMessage(e));
+      setPlans([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshPlans();
+  }, [refreshPlans]);
+
+  const onCreate = async () => {
+    const name = window.prompt("新建方案名称");
+    if (name === null) return;
+    const n = name.trim();
+    if (!n) {
+      setError("方案名称不能为空");
+      return;
+    }
+    const noteRaw = window.prompt("备注（可选，留空跳过）", "");
+    const note = noteRaw === null ? undefined : noteRaw.trim() || null;
+    try {
+      await createPlan({ name: n, note });
+      await refreshPlans();
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+  };
+
+  const onEdit = async (p: Plan) => {
+    const name = window.prompt("方案名称", p.name);
+    if (name === null) return;
+    const n = name.trim();
+    if (!n) {
+      setError("方案名称不能为空");
+      return;
+    }
+    try {
+      await updatePlan({ id: p.id, name: n });
+      await refreshPlans();
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+  };
+
+  const onDelete = async (p: Plan) => {
+    if (!window.confirm(`确定删除方案「${p.name}」？此操作不可撤销。`)) return;
+    try {
+      await deletePlan(p.id);
+      await refreshPlans();
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+  };
+
+  const totalLabel = loading ? "…" : `${plans.length} 个`;
+
   return (
     <div className="flex min-w-0 flex-col gap-6">
       <div className="flex min-w-0 flex-col gap-6 xl:flex-row xl:items-start">
@@ -167,7 +218,7 @@ export function PlansPage() {
                 <p className="mt-1 text-sm text-slate-600">创建、管理和维护各类排座方案</p>
               </div>
               <div className="flex flex-wrap gap-2">
-                <button type="button" className={pageBtnPrimary} aria-label="新建方案">
+                <button type="button" className={pageBtnPrimary} aria-label="新建方案" onClick={() => void onCreate()}>
                   <span className="text-base leading-none" aria-hidden>
                     +
                   </span>
@@ -196,22 +247,54 @@ export function PlansPage() {
           </section>
 
           <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            {STATS.map((s) => (
-              <div key={s.label} className={`${cardShell} p-4`}>
-                <div className="flex items-start gap-3">
-                  <div
-                    className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-sm font-semibold ${s.iconBg}`}
-                  >
-                    {s.glyph}
-                  </div>
-                  <div className="min-w-0">
-                    <div className="text-xs text-slate-500">{s.label}</div>
-                    <div className="mt-1 text-xl font-semibold tracking-tight text-slate-900">{s.value}</div>
-                    <div className="mt-1 text-xs text-slate-500">{s.hint}</div>
-                  </div>
+            <div className={`${cardShell} p-4`}>
+              <div className="flex items-start gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-sm font-semibold bg-sky-100 text-sky-700">
+                  总
+                </div>
+                <div className="min-w-0">
+                  <div className="text-xs text-slate-500">总方案数</div>
+                  <div className="mt-1 text-xl font-semibold tracking-tight text-slate-900">{totalLabel}</div>
+                  <div className="mt-1 text-xs text-slate-500">所有方案</div>
                 </div>
               </div>
-            ))}
+            </div>
+            <div className={`${cardShell} p-4`}>
+              <div className="flex items-start gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-sm font-semibold bg-emerald-100 text-emerald-700">
+                  新
+                </div>
+                <div className="min-w-0">
+                  <div className="text-xs text-slate-500">本月新增</div>
+                  <div className="mt-1 text-xl font-semibold tracking-tight text-slate-900">—</div>
+                  <div className="mt-1 text-xs text-slate-500">待接入活动统计</div>
+                </div>
+              </div>
+            </div>
+            <div className={`${cardShell} p-4`}>
+              <div className="flex items-start gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-sm font-semibold bg-orange-100 text-orange-700">
+                  !
+                </div>
+                <div className="min-w-0">
+                  <div className="text-xs text-slate-500">待处理异常</div>
+                  <div className="mt-1 text-xl font-semibold tracking-tight text-slate-900">—</div>
+                  <div className="mt-1 text-xs text-slate-500">待产品定义</div>
+                </div>
+              </div>
+            </div>
+            <div className={`${cardShell} p-4`}>
+              <div className="flex items-start gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-sm font-semibold bg-violet-100 text-violet-700">
+                  出
+                </div>
+                <div className="min-w-0">
+                  <div className="text-xs text-slate-500">导出记录</div>
+                  <div className="mt-1 text-xl font-semibold tracking-tight text-slate-900">—</div>
+                  <div className="mt-1 text-xs text-slate-500">待接入导出统计</div>
+                </div>
+              </div>
+            </div>
           </section>
 
           <section className={`${cardShell} p-6`}>
@@ -241,66 +324,94 @@ export function PlansPage() {
               </div>
             </div>
 
+            {error ? (
+              <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800" role="alert">
+                {error}
+              </div>
+            ) : null}
+
             <div className="mt-6 grid gap-4 lg:grid-cols-2">
-              {PLANS.map((p) => (
-                <article key={p.id} className="rounded-2xl border border-slate-200/80 bg-slate-50/40 p-5">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="truncate text-base font-semibold text-slate-900">{p.name}</div>
+              {loading ? (
+                <div className="col-span-full text-sm text-slate-500">加载中…</div>
+              ) : plans.length === 0 ? (
+                <div className="col-span-full text-sm text-slate-500">暂无方案，请点击「新建方案」。</div>
+              ) : (
+                plans.map((p) => (
+                  <article key={p.id} className="rounded-2xl border border-slate-200/80 bg-slate-50/40 p-5">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="truncate text-base font-semibold text-slate-900">{p.name}</div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={[
+                            "shrink-0 rounded-full border px-2.5 py-0.5 text-xs font-medium",
+                            statusBadgeClass(p.status),
+                          ].join(" ")}
+                        >
+                          {p.status}
+                        </span>
+                        <button
+                          type="button"
+                          className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-200/90 bg-white text-slate-600 shadow-sm hover:bg-slate-50"
+                          aria-label="更多"
+                          title="更多"
+                        >
+                          ···
+                        </button>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <span
-                        className={[
-                          "shrink-0 rounded-full border px-2.5 py-0.5 text-xs font-medium",
-                          statusBadgeClass(p.status),
-                        ].join(" ")}
-                      >
-                        {p.status}
-                      </span>
-                      <button
-                        type="button"
-                        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-200/90 bg-white text-slate-600 shadow-sm hover:bg-slate-50"
-                        aria-label="更多"
-                        title="更多"
-                      >
-                        ···
-                      </button>
-                    </div>
-                  </div>
 
-                  <div className="mt-4 grid grid-cols-3 gap-3 text-sm">
-                    <div className="rounded-xl border border-slate-200/80 bg-white px-3 py-2">
-                      <div className="text-xs text-slate-500">桌数</div>
-                      <div className="mt-1 font-semibold text-slate-900">{p.tableCount}</div>
+                    <div className="mt-4 grid grid-cols-3 gap-3 text-sm">
+                      <div className="rounded-xl border border-slate-200/80 bg-white px-3 py-2">
+                        <div className="text-xs text-slate-500">桌数</div>
+                        <div className="mt-1 font-semibold text-slate-900">{p.tableCount}</div>
+                      </div>
+                      <div className="rounded-xl border border-slate-200/80 bg-white px-3 py-2">
+                        <div className="text-xs text-slate-500">人数</div>
+                        <div className="mt-1 font-semibold text-slate-900">{p.guestCount}</div>
+                      </div>
+                      <div className="rounded-xl border border-slate-200/80 bg-white px-3 py-2">
+                        <div className="text-xs text-slate-500">更新时间</div>
+                        <div className="mt-1 text-xs font-semibold leading-snug text-slate-900">{p.updatedAt}</div>
+                      </div>
                     </div>
-                    <div className="rounded-xl border border-slate-200/80 bg-white px-3 py-2">
-                      <div className="text-xs text-slate-500">人数</div>
-                      <div className="mt-1 font-semibold text-slate-900">{p.guestCount}</div>
-                    </div>
-                    <div className="rounded-xl border border-slate-200/80 bg-white px-3 py-2">
-                      <div className="text-xs text-slate-500">更新时间</div>
-                      <div className="mt-1 text-xs font-semibold leading-snug text-slate-900">{p.updatedAt}</div>
-                    </div>
-                  </div>
 
-                  <div className="mt-3 rounded-xl border border-slate-200/80 bg-white px-3 py-2 text-sm text-slate-700">
-                    <span className="text-xs text-slate-500">人数分布：</span>
-                    <span className="font-medium text-slate-900">{formatDistribution(p.distribution)}</span>
-                  </div>
-
-                  <div className="mt-4 flex items-center justify-between gap-3 border-t border-slate-200/70 pt-4">
-                    <div className="flex min-w-0 items-center gap-2 text-sm text-slate-600">
-                      <span
-                        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-200/80 text-xs font-semibold text-slate-700"
-                        aria-hidden
-                      >
-                        {p.owner.slice(0, 1)}
-                      </span>
-                      <span className="truncate">{p.owner}</span>
+                    <div className="mt-3 rounded-xl border border-slate-200/80 bg-white px-3 py-2 text-sm text-slate-700">
+                      <span className="text-xs text-slate-500">人数分布：</span>
+                      <span className="font-medium text-slate-900">{formatDistribution(p.distribution)}</span>
                     </div>
-                  </div>
-                </article>
-              ))}
+
+                    <div className="mt-4 flex items-center justify-between gap-3 border-t border-slate-200/70 pt-4">
+                      <div className="flex min-w-0 items-center gap-2 text-sm text-slate-600">
+                        <span
+                          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-200/80 text-xs font-semibold text-slate-700"
+                          aria-hidden
+                        >
+                          {p.owner.slice(0, 1)}
+                        </span>
+                        <span className="truncate">{p.owner}</span>
+                      </div>
+                      <div className="flex shrink-0 gap-2">
+                        <button
+                          type="button"
+                          className="rounded-lg px-2 py-1 text-sm font-medium text-slate-700 hover:bg-slate-100"
+                          onClick={() => void onEdit(p)}
+                        >
+                          编辑
+                        </button>
+                        <button
+                          type="button"
+                          className="rounded-lg px-2 py-1 text-sm font-medium text-red-600 hover:bg-red-50"
+                          onClick={() => void onDelete(p)}
+                        >
+                          删除
+                        </button>
+                      </div>
+                    </div>
+                  </article>
+                ))
+              )}
             </div>
           </section>
         </div>
@@ -316,7 +427,7 @@ export function PlansPage() {
                       "mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border text-xs font-semibold",
                       a.tone,
                     ].join(" ")}
-                    >
+                  >
                     •
                   </div>
                   <div className="min-w-0">
