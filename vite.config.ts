@@ -4,19 +4,21 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 
-const root = fileURLToPath(new URL(".", import.meta.url));
-
-export default defineConfig({
-  resolve: {
-    alias: {
-      "@": path.resolve(root, "src"),
+export default defineConfig(({ command }) => {
+  const root = fileURLToPath(new URL(".", import.meta.url));
+  return {
+    base: command === "build" ? "./" : "/",
+    resolve: {
+      alias: {
+        "@": path.resolve(root, "src"),
+      },
     },
-  },
-  plugins: [react(), tailwindcss()],
-  clearScreen: false,
-  server: {
-    port: 1420,
-    strictPort: true,
-  },
-  envPrefix: ["VITE_", "TAURI_"],
+    plugins: [react(), tailwindcss()],
+    clearScreen: false,
+    server: {
+      port: 1420,
+      strictPort: true,
+    },
+    envPrefix: ["VITE_", "TAURI_"],
+  };
 });

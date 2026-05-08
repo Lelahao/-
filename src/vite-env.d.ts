@@ -7,3 +7,11 @@ interface ImportMetaEnv {
 interface ImportMeta {
   readonly env: ImportMetaEnv;
 }
+
+interface PaizuoDesktopBridge {
+  getEnv: () => Promise<{ apiOrigin: string; backendPort: number }>;
+}
+
+interface Window {
+  paizuoDesktop?: PaizuoDesktopBridge;
+}

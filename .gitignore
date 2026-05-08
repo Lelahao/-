@@ -6,4 +6,5 @@ dist-ssr
 app-icon.png
 src-tauri/target
 src-tauri/gen
-server/data
+release
+electron/dist
