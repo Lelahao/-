@@ -25,6 +25,6 @@ export default defineConfig(({ command }) => {
         },
       },
     },
-    envPrefix: ["VITE_", "TAURI_"],
+    envPrefix: ["VITE_"],
   };
 });

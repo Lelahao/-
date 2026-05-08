@@ -7,8 +7,8 @@ release
 *.local
 .DS_Store
 app-icon.png
-src-tauri/target
-src-tauri/gen
+archive/src-tauri/target
+archive/src-tauri/gen
 server/data
 server/build
 server/dist

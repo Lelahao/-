@@ -1,4 +1,6 @@
-# Tauri invoke → 本地 REST API 映射
+# Tauri invoke → 本地 REST API 映射（历史对照）
+
+> **归档说明**：桌面壳已切换为 **Electron**，原 **Tauri / Rust** 工程已移至 `archive/src-tauri/`。本文档仅保留早期 **invoke → HTTP** 对照，便于查阅；运行时请以当前 FastAPI 与 `src/api/*` 为准。
 
 **服务前缀：** 除另行说明外，业务接口均为 `http://127.0.0.1:8765/api/...`（以 `npm run dev:backend` 为准）。
 
