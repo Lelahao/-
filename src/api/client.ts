@@ -1,12 +1,17 @@
 /**
  * 本地排座 HTTP API 客户端。
- * - 默认：`http://127.0.0.1:8765`（与 `npm run dev:backend` 一致）
- * - 覆盖：`.env` 中 `VITE_API_BASE_URL`（可为 `http://127.0.0.1:8000` 等）
+ * - 开发（Vite）：默认 `""`，请求同源 `/api/*`，由 `vite.config.ts` 代理到 `127.0.0.1:8765`，避免 localhost 与 127.0.0.1 跨域。
+ * - 生产 / Electron 静态包：默认 `http://127.0.0.1:8765`。
+ * - 覆盖：环境变量 `VITE_API_BASE_URL`（设为空字符串也可强制走相对路径）。
  */
 
 function normalizeBase(raw: string | undefined): string {
-  const s = (raw?.trim() || "http://127.0.0.1:8765").replace(/\/+$/, "");
-  return s;
+  const trimmed = raw?.trim();
+  if (trimmed !== undefined && trimmed !== "") {
+    return trimmed.replace(/\/+$/, "");
+  }
+  const fallback = import.meta.env.DEV ? "" : "http://127.0.0.1:8765";
+  return fallback.replace(/\/+$/, "");
 }
 
 export const API_BASE_URL = normalizeBase(import.meta.env.VITE_API_BASE_URL);
@@ -51,7 +56,10 @@ export async function apiFetchJson<T>(path: string, init?: RequestInit): Promise
     res = await fetch(url, { ...init, headers });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Network request failed";
-    throw new ApiError(msg, 0);
+    if (import.meta.env.DEV) {
+      console.error("[api] fetch failed", { requestUrl: url, method: init?.method ?? "GET", cause: e });
+    }
+    throw new ApiError(`${msg} (Request URL: ${url})`, 0);
   }
 
   const text = await res.text();

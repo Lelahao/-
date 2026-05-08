@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 
 import sqlite3
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from server.api.common import value_error_response
@@ -28,6 +29,18 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="排座助手本地服务", lifespan=lifespan)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:1420",
+        "http://127.0.0.1:1420",
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 app.add_exception_handler(
     ValueError,
     lambda _req, exc: value_error_response(exc),
