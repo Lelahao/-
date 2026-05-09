@@ -8,9 +8,13 @@ export async function listPeople(planId: string): Promise<{ people: PersonRow[] 
 export async function putPeople(
   planId: string,
   people: Array<Record<string, unknown>>,
+  options?: { replace?: boolean },
 ): Promise<{ planUpdatedAt: number }> {
   return apiFetchJson(`/api/plans/${encodeURIComponent(planId)}/people`, {
     method: "PUT",
-    body: JSON.stringify({ people }),
+    body: JSON.stringify({
+      people,
+      replace: options?.replace === true,
+    }),
   });
 }

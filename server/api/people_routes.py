@@ -15,6 +15,7 @@ router = APIRouter(prefix="/api", tags=["people"])
 
 class PeopleBatchBody(BaseModel):
     people: list[dict[str, Any]]
+    replace: bool = False
 
 
 @router.get("/plans/{plan_id}/people")
@@ -36,7 +37,9 @@ def put_people(plan_id: str, body: PeopleBatchBody):
         if row is None:
             raise ValueError("plan not found")
         return {
-            "planUpdatedAt": people_repo.upsert_people(conn, plan_id, body.people),
+            "planUpdatedAt": people_repo.upsert_people(
+                conn, plan_id, body.people, replace=body.replace
+            ),
         }
 
     return run_write(w)

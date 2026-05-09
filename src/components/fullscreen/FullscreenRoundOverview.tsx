@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type DragEvent } from "react";
 import {
   DndContext,
   DragOverlay,
@@ -9,22 +9,42 @@ import {
   type DragEndEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { FullscreenTableCard } from "@/components/fullscreen/FullscreenTableCard";
 import { DraggableSeatLabel } from "@/components/fullscreen/DraggableSeatLabel";
+import {
+  DroppableUnassignedPool,
+  UNASSIGNED_POOL_DROP_ID,
+} from "@/components/fullscreen/DroppableUnassignedPool";
+import { RoundOverviewBoard } from "@/components/round/RoundOverviewBoard";
 import { buildSeedLayout } from "@/fullscreen/seedLayout";
-import { movePersonToSeat } from "@/fullscreen/layoutOps";
+import { movePersonToSeat, unassignPerson } from "@/fullscreen/layoutOps";
 import { loadLayoutSnapshot, saveLayoutSnapshot } from "@/fullscreen/roundStorage";
 import type { LayoutSnapshot, PersonRecord, SeatDragData, TableDefinition } from "@/fullscreen/types";
+import { roundPlanToLayout } from "@/lib/layoutBridge";
+import { isLinkableBackendPlanId } from "@/lib/roundBackendPlanId";
+import { useRoundPersonSearchStore, roundPersonSearchMatches } from "@/stores/roundPersonSearchStore";
+import { useRoundPlanDemoStore } from "@/stores/roundPlanDemoStore";
+
+const TABLE_ORDER_MIME = "application/x-paizuo-table-order";
+
+function reorderTablesList(prev: TableDefinition[], sourceId: string, targetId: string): TableDefinition[] {
+  if (sourceId === targetId) return prev;
+  const next = [...prev];
+  const si = next.findIndex((t) => t.id === sourceId);
+  if (si < 0) return prev;
+  const [item] = next.splice(si, 1);
+  let insertAt = next.findIndex((t) => t.id === targetId);
+  if (insertAt < 0) insertAt = next.length;
+  next.splice(insertAt, 0, item);
+  return next;
+}
 
 const btnBase =
   "inline-flex items-center justify-center rounded-lg border border-slate-200/90 bg-white px-3 py-1.5 text-sm text-slate-700 shadow-sm transition hover:bg-slate-50";
 
 const btnPrimary =
   "inline-flex items-center justify-center rounded-lg border border-orange-500/20 bg-orange-500 px-3 py-1.5 text-sm font-medium text-white shadow-sm transition hover:bg-orange-600";
-
-const cardShell =
-  "rounded-2xl border border-slate-200/90 bg-white shadow-[0_1px_2px_rgb(15_23_42_/_0.06),0_8px_24px_rgb(15_23_42_/_0.04)]";
 
 function parseSeatTarget(overId: string): { tableId: string; seatNo: number } | null {
   if (!overId.startsWith("seat::")) return null;
@@ -35,27 +55,72 @@ function parseSeatTarget(overId: string): { tableId: string; seatNo: number } | 
   return { tableId: parts[1], seatNo };
 }
 
+const FS_COLS_STORAGE = "paizuo-fullscreen-cols-per-row";
+const FS_ZOOM_STORAGE = "paizuo-fullscreen-visual-scale";
+
+function readFullscreenCols(): number {
+  try {
+    const raw = localStorage.getItem(FS_COLS_STORAGE);
+    const n = raw ? parseInt(raw, 10) : NaN;
+    if (Number.isFinite(n) && n >= 1 && n <= 8) return n;
+  } catch {
+    /* ignore */
+  }
+  return 4;
+}
+
+function readVisualScale(): number {
+  try {
+    const raw = localStorage.getItem(FS_ZOOM_STORAGE);
+    const z = raw ? parseFloat(raw) : NaN;
+    if (Number.isFinite(z) && z >= 0.75 && z <= 1.35) return Math.round(z * 100) / 100;
+  } catch {
+    /* ignore */
+  }
+  return 1;
+}
+
 export function FullscreenRoundOverview() {
   const navigate = useNavigate();
+  const location = useLocation();
   const seed = useMemo(() => buildSeedLayout(), []);
 
   const [people, setPeople] = useState<PersonRecord[]>(() => seed.people);
   const [tables, setTables] = useState<TableDefinition[]>(() => seed.tables);
+  const [colsPerRow, setColsPerRow] = useState<number>(() => readFullscreenCols());
+  const [visualScale, setVisualScale] = useState(readVisualScale);
   const [activeDrag, setActiveDrag] = useState<SeatDragData | null>(null);
   const [saving, setSaving] = useState(false);
+  const [tableReorderDropId, setTableReorderDropId] = useState<string | null>(null);
+
+  const plan = useRoundPlanDemoStore((s) => s.plan);
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
-      const snap = await loadLayoutSnapshot();
-      if (cancelled || !snap?.people?.length) return;
+    const apply = (snap: LayoutSnapshot) => {
+      if (cancelled) return;
       setPeople(snap.people);
-      if (snap.tables?.length) setTables(snap.tables);
+      setTables(snap.tables);
+    };
+
+    (async () => {
+      if (isLinkableBackendPlanId(plan.planId)) {
+        apply(roundPlanToLayout(plan));
+        return;
+      }
+      const snap = await loadLayoutSnapshot();
+      if (cancelled) return;
+      if (snap?.tables?.length) {
+        apply(snap);
+      } else {
+        apply(roundPlanToLayout(plan));
+      }
     })();
+
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [location.key, plan]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -68,6 +133,61 @@ export function FullscreenRoundOverview() {
     [people],
   );
 
+  const personSearchQuery = useRoundPersonSearchStore((s) => s.query);
+  const setPersonSearchQuery = useRoundPersonSearchStore((s) => s.setQuery);
+
+  const searchScrollTarget = useMemo(() => {
+    const q = personSearchQuery.trim().toLowerCase();
+    if (!q) return { tableId: null as string | null, unassignedPersonId: null as string | null };
+    for (const tbl of tables) {
+      for (let sn = 1; sn <= tbl.capacity; sn++) {
+        const person = people.find((p) => p.assignedTableId === tbl.id && p.assignedSeatNo === sn);
+        if (person && person.name.trim().toLowerCase().includes(q)) {
+          return { tableId: tbl.id, unassignedPersonId: null as string | null };
+        }
+      }
+    }
+    const u = unassigned.find((p) => p.name.trim().toLowerCase().includes(q));
+    return { tableId: null as string | null, unassignedPersonId: u?.id ?? null };
+  }, [personSearchQuery, tables, people, unassigned]);
+
+  useEffect(() => {
+    const raw = personSearchQuery.trim();
+    if (!raw) return;
+    const timer = window.setTimeout(() => {
+      document.querySelector<HTMLElement>("[data-paizuo-round-search-scroll=\"1\"]")?.scrollIntoView({
+        behavior: "smooth",
+        block: "nearest",
+      });
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [personSearchQuery, searchScrollTarget.tableId, searchScrollTarget.unassignedPersonId]);
+
+  const onColsChange = (raw: string) => {
+    const n = parseInt(raw, 10);
+    if (!Number.isFinite(n)) return;
+    const v = Math.max(1, Math.min(8, n));
+    setColsPerRow(v);
+    try {
+      localStorage.setItem(FS_COLS_STORAGE, String(v));
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const adjustVisualScale = (delta: number) => {
+    setVisualScale((prev) => {
+      const n = Math.round((prev + delta) * 100) / 100;
+      const c = Math.max(0.75, Math.min(1.35, n));
+      try {
+        localStorage.setItem(FS_ZOOM_STORAGE, String(c));
+      } catch {
+        /* ignore */
+      }
+      return c;
+    });
+  };
+
   const onDragStart = (e: DragStartEvent) => {
     const data = e.active.data.current as SeatDragData | undefined;
     setActiveDrag(data ?? null);
@@ -78,11 +198,25 @@ export function FullscreenRoundOverview() {
     const data = e.active.data.current as SeatDragData | undefined;
     const overId = e.over?.id?.toString();
     if (!data || !overId) return;
+    if (overId === UNASSIGNED_POOL_DROP_ID) {
+      setPeople((prev) => unassignPerson(prev, data.personId));
+      return;
+    }
     const target = parseSeatTarget(overId);
     if (!target) return;
 
     setPeople((prev) => movePersonToSeat(prev, data.personId, target.tableId, target.seatNo));
   };
+
+  const boardStats = useMemo(
+    () => ({
+      tableCount: tables.length,
+      peopleTotal: people.length,
+      assigned: people.filter((p) => p.assignedTableId && p.assignedSeatNo != null).length,
+      unassigned: unassigned.length,
+    }),
+    [tables.length, people, unassigned],
+  );
 
   const onSave = async () => {
     const snapshot: LayoutSnapshot = { people, tables };
@@ -92,6 +226,40 @@ export function FullscreenRoundOverview() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const onTableReorderDragStart = (e: DragEvent, sourceTableId: string) => {
+    e.stopPropagation();
+    e.dataTransfer.setData(TABLE_ORDER_MIME, sourceTableId);
+    e.dataTransfer.effectAllowed = "move";
+  };
+
+  const onTableReorderDragEnd = () => {
+    setTableReorderDropId(null);
+  };
+
+  const onTableReorderDragOver = (e: DragEvent, tableId: string) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    setTableReorderDropId(tableId);
+  };
+
+  const onTableReorderDragLeave = (e: DragEvent, tableId: string) => {
+    const next = e.relatedTarget;
+    if (next instanceof Node && e.currentTarget.contains(next)) return;
+    setTableReorderDropId((cur) => (cur === tableId ? null : cur));
+  };
+
+  const onTableReorderDrop = (e: DragEvent, targetTableId: string) => {
+    e.preventDefault();
+    setTableReorderDropId(null);
+    const orderSource = e.dataTransfer.getData(TABLE_ORDER_MIME);
+    if (!orderSource || orderSource === targetTableId) return;
+    setTables((prevTables) => {
+      const nextTables = reorderTablesList(prevTables, orderSource, targetTableId);
+      void saveLayoutSnapshot({ people, tables: nextTables });
+      return nextTables;
+    });
   };
 
   return (
@@ -104,19 +272,57 @@ export function FullscreenRoundOverview() {
             <div className="text-sm font-semibold text-slate-900">圆桌排座 · 总览</div>
           </div>
 
-          <div className="hidden items-center gap-2 text-sm text-slate-500 md:flex">
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200/80 bg-emerald-50/80 px-2.5 py-1 text-emerald-800">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" aria-hidden />
-              已保存到本机
-            </span>
+          <div className="hidden shrink-0 items-center md:flex">
+            <label className="flex w-[13.5rem] min-w-0 items-center gap-2 text-sm text-slate-600">
+              <span className="sr-only">搜索姓名</span>
+              <input
+                type="search"
+                enterKeyHint="search"
+                placeholder="搜索姓名…"
+                autoComplete="off"
+                value={personSearchQuery}
+                onChange={(e) => setPersonSearchQuery(e.target.value)}
+                className="w-full min-w-0 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-200"
+              />
+            </label>
           </div>
 
           <div className="flex flex-wrap items-center justify-end gap-2">
+            <label className="mr-1 flex items-center gap-1.5 text-sm text-slate-600">
+              <span className="whitespace-nowrap">每行桌数</span>
+              <input
+                type="number"
+                min={1}
+                max={8}
+                inputMode="numeric"
+                className="w-16 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-center text-sm font-medium text-slate-900 shadow-sm focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-200"
+                value={colsPerRow}
+                onChange={(e) => onColsChange(e.target.value)}
+                aria-label="全屏每行显示几张桌子"
+              />
+            </label>
+            <div className="mr-1 flex items-center gap-0.5 rounded-lg border border-slate-200/80 bg-slate-50/90 px-1 py-0.5">
+              <span className="hidden whitespace-nowrap pl-1 text-xs text-slate-600 sm:inline">圆桌</span>
+              <button
+                type="button"
+                className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-lg font-semibold leading-none text-slate-700 shadow-sm hover:bg-slate-50"
+                aria-label="缩小圆桌示意"
+                onClick={() => adjustVisualScale(-0.05)}
+              >
+                −
+              </button>
+              <span className="w-9 text-center text-xs tabular-nums text-slate-800">{Math.round(visualScale * 100).toString()}%</span>
+              <button
+                type="button"
+                className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-lg font-semibold leading-none text-slate-700 shadow-sm hover:bg-slate-50"
+                aria-label="放大圆桌示意"
+                onClick={() => adjustVisualScale(0.05)}
+              >
+                +
+              </button>
+            </div>
             <button type="button" className={btnBase} onClick={onSave} disabled={saving}>
               保存方案
-            </button>
-            <button type="button" className={btnPrimary}>
-              自动排座
             </button>
             <button type="button" className={btnBase}>
               桌次管理
@@ -150,48 +356,71 @@ export function FullscreenRoundOverview() {
         onDragCancel={() => setActiveDrag(null)}
         onDragEnd={onDragEnd}
       >
-        <div className="flex min-h-0 min-w-0 flex-1 gap-4 p-4">
-          <aside className={`${cardShell} w-[300px] shrink-0 overflow-auto p-4`}>
-            <div className="text-sm font-semibold text-slate-900">未安排人员（{unassigned.length}）</div>
-            <p className="mt-1 text-xs text-slate-500">拖拽到座位虚线区可直接入座或换位。</p>
-
-            <div className="mt-4 space-y-2">
-              {unassigned.map((p) => (
-                <div
-                  key={p.id}
-                  className="flex items-center justify-between gap-3 rounded-xl border border-slate-200/90 bg-slate-50/60 px-3 py-2"
-                >
-                  <DraggableSeatLabel
-                    personId={p.id}
-                    personName={p.name}
-                    sourceTableId={null}
-                    sourceSeatNo={0}
-                  />
-                  <span className="text-slate-400" aria-hidden>
-                    ⋮⋮
-                  </span>
+        <div className="flex min-h-0 min-w-0 flex-1 p-4">
+          <RoundOverviewBoard
+            mode="fullscreen"
+            planName="2026 春季接待 · 锦绣厅"
+            stats={boardStats}
+            tableCount={tables.length}
+            gridCols={colsPerRow}
+            preGrid={
+              <DroppableUnassignedPool>
+                <div className="text-sm font-semibold text-slate-900">未安排人员（{unassigned.length}）</div>
+                <p className="mt-1 text-xs text-slate-500">
+                  已入座人员可拖入此处取消桌位；此处人员可拖回空座入座。
+                </p>
+                <div className="mt-3 flex min-h-[44px] flex-wrap gap-2">
+                  {unassigned.map((p) => (
+                    <div
+                      key={p.id}
+                      data-paizuo-round-search-scroll={
+                        searchScrollTarget.unassignedPersonId === p.id ? "1" : undefined
+                      }
+                    >
+                      <DraggableSeatLabel
+                        personId={p.id}
+                        personName={p.name}
+                        sourceTableId={null}
+                        sourceSeatNo={0}
+                        density="compact"
+                        searchHighlight={roundPersonSearchMatches(p.name, personSearchQuery)}
+                      />
+                    </div>
+                  ))}
+                  {unassigned.length === 0 ? (
+                    <span className="text-sm text-slate-400">暂无未安排人员</span>
+                  ) : null}
                 </div>
-              ))}
-              {unassigned.length === 0 ? <div className="text-sm text-slate-500">暂无未安排人员</div> : null}
-            </div>
-          </aside>
-
-          <main className="min-h-0 min-w-0 flex-1 overflow-auto">
-            <div className="grid gap-4 xl:grid-cols-2 2xl:grid-cols-3">
-              {tables.map((t) => (
-                <FullscreenTableCard key={t.id} table={t} people={people} />
-              ))}
-            </div>
-
-            <div className="mt-4 rounded-2xl border border-sky-200/70 bg-sky-50/70 px-4 py-3 text-sm text-sky-900">
-              拖拽座位标签到其他位置换位
-            </div>
-          </main>
+              </DroppableUnassignedPool>
+            }
+            postGrid={
+              <div className="mt-4 rounded-2xl border border-sky-200/70 bg-sky-50/70 px-4 py-3 text-sm text-sky-900">
+                拖拽座位标签到其他位置换位，或拖入顶栏「未安排人员」取消桌位。
+              </div>
+            }
+          >
+            {tables.map((t) => (
+              <FullscreenTableCard
+                key={t.id}
+                table={t}
+                people={people}
+                visualScale={visualScale}
+                personSearchQuery={personSearchQuery}
+                searchScrollTarget={searchScrollTarget.tableId === t.id}
+                onTableReorderDragStart={onTableReorderDragStart}
+                onTableReorderDragEnd={onTableReorderDragEnd}
+                tableReorderDropActive={tableReorderDropId === t.id}
+                onTableReorderDragOver={onTableReorderDragOver}
+                onTableReorderDragLeave={onTableReorderDragLeave}
+                onTableReorderDrop={onTableReorderDrop}
+              />
+            ))}
+          </RoundOverviewBoard>
         </div>
 
         <DragOverlay dropAnimation={null}>
           {activeDrag ? (
-            <div className="rounded-xl border border-orange-200 bg-white px-4 py-2 text-sm font-semibold text-slate-900 shadow-[0_12px_40px_rgb(15_23_42_/_0.18)]">
+            <div className="px-1 py-0.5 text-sm font-semibold text-slate-900 drop-shadow-[0_1px_2px_rgb(15_23_42_/_0.25)]">
               {activeDrag.personName}
             </div>
           ) : null}

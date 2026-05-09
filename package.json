@@ -19,6 +19,8 @@
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
     "docx": "^9.6.1",
+    "exceljs": "^4.4.0",
+    "html-to-image": "^1.11.13",
     "pptxgenjs": "^4.0.1",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
@@ -50,7 +52,11 @@
       "buildResources": "build"
     },
     "icon": "icons/icon.ico",
-    "files": ["dist/**/*", "dist-electron/**/*", "package.json"],
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "package.json"
+    ],
     "asar": true,
     "extraResources": [
       {
@@ -68,15 +74,22 @@
       "allowToChangeInstallationDirectory": true,
       "perMachine": false,
       "shortcutName": "排座助手",
-      "installerLanguages": ["zh_CN", "en_US"],
+      "installerLanguages": [
+        "zh_CN",
+        "en_US"
+      ],
       "language": "2052"
     },
     "mac": {
-      "target": ["dir"],
+      "target": [
+        "dir"
+      ],
       "category": "public.app-category.productivity"
     },
     "linux": {
-      "target": ["dir"]
+      "target": [
+        "dir"
+      ]
     }
   }
 }

@@ -6,7 +6,13 @@ export function DraggableSeatLabel(props: {
   personName: string;
   sourceTableId: string | null;
   sourceSeatNo: number;
+  /** compact：侧栏与窄区；comfortable：全屏座位区可完整换行展示姓名 */
+  density?: "compact" | "comfortable";
+  /** 总览搜索命中 */
+  searchHighlight?: boolean;
 }) {
+  const density = props.density ?? "comfortable";
+
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `person::${props.personId}`,
     data: {
@@ -17,18 +23,32 @@ export function DraggableSeatLabel(props: {
     } satisfies SeatDragData,
   });
 
+  const compactCls =
+    "inline-flex min-h-[32px] w-fit max-w-[120px] cursor-grab select-none items-center justify-center px-0 py-1 text-sm font-semibold text-slate-900 transition active:cursor-grabbing";
+
+  const comfortableCls =
+    "inline-flex min-h-[32px] w-fit max-w-[min(100%,11rem)] cursor-grab select-none items-center justify-center px-0 py-1 text-center text-sm font-semibold leading-snug text-slate-900 transition active:cursor-grabbing whitespace-normal break-words";
+
+  const highlightCls = props.searchHighlight ? " rounded-md ring-2 ring-amber-400 ring-offset-1 bg-amber-50" : "";
+
   return (
     <button
       ref={setNodeRef}
       {...listeners}
       {...attributes}
       type="button"
+      title={props.personName}
       className={[
-        "w-full max-w-full rounded-xl border border-orange-200/80 bg-white px-2 py-2 text-center text-xs font-semibold leading-snug text-slate-900 shadow-sm break-words sm:text-sm",
-        isDragging ? "opacity-0" : "opacity-100",
+        density === "compact" ? compactCls : comfortableCls,
+        highlightCls,
+        isDragging ? "opacity-55" : "opacity-100",
       ].join(" ")}
     >
-      {props.personName}
+      {density === "compact" ? (
+        <span className="min-w-0 truncate">{props.personName}</span>
+      ) : (
+        props.personName
+      )}
     </button>
   );
 }

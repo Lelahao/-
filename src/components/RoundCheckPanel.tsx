@@ -15,15 +15,55 @@ export function RoundCheckPanel({
   result,
   detailLink,
   compact,
+  layout = "default",
 }: {
   result: RoundCheckResult;
   detailLink?: string;
   compact?: boolean;
+  /** banner：总览首行宽卡片，单行摘要 */
+  layout?: "default" | "banner";
 }) {
   const { planStatus, checkItems, tableStatuses } = result;
-  const top = compact ? checkItems.filter((i) => i.severity !== "pass").slice(0, 6) : checkItems.filter((i) => i.severity !== "pass");
-
   const errTables = tableStatuses.filter((t) => t.errors.length > 0).length;
+
+  if (layout === "banner") {
+    return (
+      <div className="flex h-full min-h-0 min-w-0 flex-col justify-between gap-2">
+        <div className="flex shrink-0 items-start gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-orange-100 text-sm font-semibold text-orange-700">
+            检
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+              <span className="text-sm font-semibold text-slate-900">总体检查</span>
+              {detailLink ? (
+                <Link
+                  to={detailLink}
+                  className="whitespace-nowrap text-xs font-medium text-orange-700 hover:text-orange-800"
+                >
+                  详情
+                </Link>
+              ) : null}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex min-h-0 min-w-0 flex-1 flex-wrap content-center gap-x-2 gap-y-1 text-xs text-slate-600">
+          <span className="font-medium text-slate-800">方案 {planStatus.ok ? "无错误" : "有错误"}</span>
+          <span>提醒 {planStatus.warnCount + planStatus.infoCount} 条</span>
+          <span>异常桌 {errTables} 桌</span>
+          <span>未安排 {planStatus.unassignedCount} 人</span>
+          <span>空座 {planStatus.totalEmptySeats}</span>
+        </div>
+
+        <p className="shrink-0 break-words text-xs font-medium leading-snug text-slate-800" title={planStatus.summary}>
+          {planStatus.summary}
+        </p>
+      </div>
+    );
+  }
+
+  const top = compact ? checkItems.filter((i) => i.severity !== "pass").slice(0, 6) : checkItems.filter((i) => i.severity !== "pass");
 
   return (
     <div className={`${cardShell} p-5`}>

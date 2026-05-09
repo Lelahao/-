@@ -23,8 +23,18 @@ def upsert_people(
     conn: sqlite3.Connection,
     plan_id: str,
     people_in: list[dict[str, Any]],
+    *,
+    replace: bool = False,
 ) -> int:
     t = now_ms()
+    if replace:
+        incoming_ids = {str(_pick(p, "id")) for p in people_in}
+        cur = conn.execute("SELECT id FROM people WHERE plan_id = ?1", (plan_id,))
+        for row in cur.fetchall():
+            pid = row[0]
+            if pid not in incoming_ids:
+                conn.execute("DELETE FROM people WHERE id = ?1", (pid,))
+
     for p in people_in:
         pid = str(_pick(p, "id"))
         display_name = str(_pick(p, "displayName", "display_name") or "")

@@ -1,6 +1,45 @@
 import { loadLayoutSnapshot } from "@/fullscreen/roundStorage";
 import type { LayoutSnapshot, PersonRecord, TableDefinition } from "@/fullscreen/types";
+import type { PlanDetail } from "@/lib/dbTypes";
 import type { RoundPlanSnapshot } from "@/lib/roundSeatEngine";
+
+/** 将方案详情（后端 `GET /api/plans/{id}`）转为圆桌总览用的布局快照。 */
+export function planDetailToLayoutSnapshot(detail: PlanDetail): LayoutSnapshot {
+  const tables: TableDefinition[] = [...detail.tables]
+    .sort((a, b) => a.tableNo - b.tableNo)
+    .map((t) => ({
+      id: t.id,
+      no: t.tableNo,
+      hallName: t.hallName ?? "",
+      capacity: t.capacity,
+      isMainTable: false,
+    }));
+
+  const seatAssignmentByPerson = new Map<string, { tableId: string; seatNo: number }>();
+  for (const s of detail.seats) {
+    if (s.personId) {
+      seatAssignmentByPerson.set(s.personId, { tableId: s.tableId, seatNo: s.seatNo });
+    }
+  }
+
+  const people: PersonRecord[] = detail.people.map((p) => {
+    let assignedTableId = p.assignedTableId;
+    let assignedSeatNo = p.assignedSeatNo;
+    if ((assignedTableId == null || assignedSeatNo == null) && seatAssignmentByPerson.has(p.id)) {
+      const x = seatAssignmentByPerson.get(p.id)!;
+      assignedTableId = x.tableId;
+      assignedSeatNo = x.seatNo;
+    }
+    return {
+      id: p.id,
+      name: p.displayName,
+      assignedTableId,
+      assignedSeatNo,
+    };
+  });
+
+  return { people, tables };
+}
 
 export async function resolveLayoutForExport(getPlan: () => RoundPlanSnapshot): Promise<LayoutSnapshot> {
   const saved = await loadLayoutSnapshot();
@@ -15,7 +54,7 @@ export function layoutToRoundPlan(layout: LayoutSnapshot, planId = "from-layout"
     no: t.no,
     hallName: t.hallName,
     capacity: t.capacity,
-    isMainTable: t.no === 4,
+    isMainTable: t.isMainTable ?? t.no === 4,
     entrance: "北侧" as const,
   }));
 
@@ -49,6 +88,7 @@ export function roundPlanToLayout(plan: RoundPlanSnapshot): LayoutSnapshot {
     no: t.no,
     hallName: t.hallName ?? "",
     capacity: t.capacity,
+    isMainTable: t.isMainTable,
   }));
 
   const people: PersonRecord[] = plan.people.map((p) => {

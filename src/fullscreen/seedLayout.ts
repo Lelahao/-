@@ -40,6 +40,7 @@ export function buildSeedLayout(): LayoutSnapshot {
     no: t.no,
     hallName: t.hallName,
     capacity: t.capacity,
+    isMainTable: t.id === "t4",
   }));
 
   const people: PersonRecord[] = [];

@@ -49,6 +49,26 @@ CREATE TABLE IF NOT EXISTS seats (
     UNIQUE(table_id, seat_no)
 );
 
+-- 方案历史版本（完整 JSON 快照，不按 plans 表增加统计字段）
+CREATE TABLE IF NOT EXISTS plan_versions (
+    id TEXT PRIMARY KEY,
+    plan_id TEXT NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
+    version_no INTEGER NOT NULL,
+    version_name TEXT,
+    note TEXT,
+    snapshot_json TEXT NOT NULL,
+    table_count INTEGER NOT NULL,
+    people_count INTEGER NOT NULL,
+    assigned_count INTEGER NOT NULL,
+    unassigned_count INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    created_by TEXT,
+    export_count INTEGER NOT NULL DEFAULT 0,
+    UNIQUE(plan_id, version_no)
+);
+
+CREATE INDEX IF NOT EXISTS idx_plan_versions_plan_id ON plan_versions(plan_id);
+
 CREATE TABLE IF NOT EXISTS ui_settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL,

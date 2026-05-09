@@ -56,3 +56,32 @@ export type UISettingRow = {
   value: string;
   updatedAt: number;
 };
+
+/** GET /api/plans/{planId}/versions 列表项 */
+export type PlanVersionListItem = {
+  id: string;
+  versionNo: number;
+  versionName: string | null;
+  note: string | null;
+  tableCount: number;
+  peopleCount: number;
+  assignedCount: number;
+  unassignedCount: number;
+  createdAt: number;
+};
+
+/** POST /api/plans/{planId}/versions 响应 */
+export type PlanVersionCreateResult = {
+  id: string;
+  planId: string;
+  versionNo: number;
+  versionName: string | null;
+  note: string | null;
+  tableCount: number;
+  peopleCount: number;
+  assignedCount: number;
+  unassignedCount: number;
+  createdAt: number;
+  createdBy: string | null;
+  exportCount: number;
+};

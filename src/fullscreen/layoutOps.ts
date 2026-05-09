@@ -53,3 +53,10 @@ export function movePersonToSeat(
     return p;
   });
 }
+
+/** 将已入座人员移回未安排池（仅清除其桌号、座位号） */
+export function unassignPerson(people: PersonRecord[], personId: string): PersonRecord[] {
+  return people.map((p) =>
+    p.id === personId ? { ...p, assignedTableId: null, assignedSeatNo: null } : p,
+  );
+}

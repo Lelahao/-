@@ -1,6 +1,9 @@
+import { useLayoutEffect, useRef, useState, type DragEvent } from "react";
 import type { PersonRecord, TableDefinition } from "@/fullscreen/types";
 import { DraggableSeatLabel } from "@/components/fullscreen/DraggableSeatLabel";
 import { DroppableSeatTarget } from "@/components/fullscreen/DroppableSeatTarget";
+import { RoundTableVisual } from "@/components/round/RoundTableVisual";
+import { resolveTableCategoryLabel } from "@/config/seatRoleTemplates";
 
 const cardShell =
   "rounded-2xl border border-slate-200/90 bg-white shadow-[0_1px_2px_rgb(15_23_42_/_0.06),0_10px_30px_rgb(15_23_42_/_0.06)]";
@@ -12,58 +15,156 @@ function personAtSeat(people: PersonRecord[], tableId: string, seatNo: number) {
 export function FullscreenTableCard(props: {
   table: TableDefinition;
   people: PersonRecord[];
+  /** 在自适应尺寸基础上的手动倍率（全屏顶栏 ±） */
+  visualScale?: number;
+  /** 顶栏姓名搜索 */
+  personSearchQuery?: string;
+  searchScrollTarget?: boolean;
+  /** 与总览一致：拖动 ⋮⋮ 调整桌卡顺序（HTML5 DataTransfer） */
+  onTableReorderDragStart?: (e: DragEvent, tableId: string) => void;
+  onTableReorderDragEnd?: () => void;
+  tableReorderDropActive?: boolean;
+  onTableReorderDragOver?: (e: DragEvent, tableId: string) => void;
+  onTableReorderDragLeave?: (e: DragEvent, tableId: string) => void;
+  onTableReorderDrop?: (e: DragEvent, tableId: string) => void;
 }) {
-  const { table, people } = props;
-  const radius = 150;
+  const {
+    table,
+    people,
+    visualScale = 1,
+    personSearchQuery = "",
+    searchScrollTarget = false,
+    onTableReorderDragStart,
+    onTableReorderDragEnd,
+    tableReorderDropActive,
+    onTableReorderDragOver,
+    onTableReorderDragLeave,
+    onTableReorderDrop,
+  } = props;
+  const tableKind = resolveTableCategoryLabel(table);
+
+  const visualWrapRef = useRef<HTMLDivElement>(null);
+  const [baseBox, setBaseBox] = useState(360);
+
+  useLayoutEffect(() => {
+    const el = visualWrapRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => {
+      const cr = entries[0]?.contentRect;
+      if (!cr?.width) return;
+      const next = Math.round(Math.max(220, Math.min(380, cr.width * 0.96)));
+      setBaseBox(next);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const fullscreenBoxPx = Math.round(
+    Math.max(200, Math.min(430, baseBox * Math.max(0.75, Math.min(1.35, visualScale)))),
+  );
+
+  const seatOccupied = Array.from({ length: table.capacity }, (_, i) => {
+    const sn = i + 1;
+    return Boolean(personAtSeat(people, table.id, sn));
+  });
+  const seatNames = Array.from({ length: table.capacity }, (_, i) => {
+    const sn = i + 1;
+    return personAtSeat(people, table.id, sn)?.name ?? null;
+  });
 
   return (
-    <section className={`${cardShell} p-5`}>
-      <div className="text-center">
-        <div className="text-base font-semibold text-slate-900">
-          {table.no}号桌 · {table.hallName}
+    <section
+      data-table-id={table.id}
+      data-paizuo-round-search-scroll={searchScrollTarget ? "1" : undefined}
+      className={[
+        cardShell,
+        "flex min-w-0 flex-col p-3 sm:p-5",
+        tableReorderDropActive ? "border-orange-300 ring-2 ring-orange-200/70" : "",
+      ].join(" ")}
+      onDragOver={onTableReorderDragOver ? (e) => onTableReorderDragOver(e, table.id) : undefined}
+      onDragLeave={onTableReorderDragLeave ? (e) => onTableReorderDragLeave(e, table.id) : undefined}
+      onDrop={onTableReorderDrop ? (e) => onTableReorderDrop(e, table.id) : undefined}
+    >
+      <div className="flex items-start gap-2">
+        {onTableReorderDragStart ? (
+          <span
+            draggable
+            onDragStart={(e) => {
+              e.stopPropagation();
+              onTableReorderDragStart(e, table.id);
+            }}
+            onDragEnd={() => onTableReorderDragEnd?.()}
+            className="mt-0.5 shrink-0 cursor-grab select-none text-slate-400 hover:text-slate-600 active:cursor-grabbing"
+            aria-label="拖动调整桌卡顺序"
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") e.preventDefault();
+            }}
+          >
+            ⋮⋮
+          </span>
+        ) : null}
+        <div className="min-w-0 flex-1 text-center">
+          <div className="text-base font-semibold text-slate-900">
+            {table.no}号桌 · {table.hallName}
+          </div>
+          <div className="mt-1 text-xs text-slate-500">{table.capacity}人桌</div>
         </div>
-        <div className="mt-1 text-xs text-slate-500">{table.capacity}人桌</div>
       </div>
 
-      <div className="relative mx-auto mt-4 h-[360px] w-[360px]">
-        <div className="absolute left-1/2 top-1/2 w-[220px] -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-slate-200/80 bg-slate-50 px-4 py-3 text-center text-xs text-slate-600">
-          <div className="font-semibold text-slate-900">座位示意</div>
-          <div className="mt-1 text-[11px] text-slate-500">拖拽姓名到虚线座位区</div>
-        </div>
+      <div ref={visualWrapRef} className="mt-1 w-full min-w-0">
+        <RoundTableVisual
+          mode="fullscreen"
+          tableNo={table.no}
+          tableKind={tableKind}
+          capacity={table.capacity}
+          seatOccupied={seatOccupied}
+          seatNames={seatNames}
+          fullscreenBoxPx={fullscreenBoxPx}
+          personSearchQuery={personSearchQuery}
+          renderSeat={({ seatNo, roleLabel, searchMatch }) => {
+            const person = personAtSeat(people, table.id, seatNo);
+            const labelText = roleLabel ?? String(seatNo);
+            const labelTitle =
+              roleLabel && person
+                ? `${roleLabel} · ${person.name}`
+                : person
+                  ? person.name
+                  : roleLabel
+                    ? `${roleLabel}`
+                    : `${seatNo}号`;
 
-        {Array.from({ length: table.capacity }, (_, i) => {
-          const seatNo = i + 1;
-          const p = personAtSeat(people, table.id, seatNo);
-          const angle = (2 * Math.PI * i) / table.capacity - Math.PI / 2;
-          const x = Math.cos(angle) * radius;
-          const y = Math.sin(angle) * radius;
-
-          return (
-            <div
-              key={seatNo}
-              className="absolute left-1/2 top-1/2 w-[150px]"
-              style={{
-                transform: `translate(-50%, -50%) translate(${x}px, ${y}px)`,
-              }}
-            >
-              <DroppableSeatTarget tableId={table.id} seatNo={seatNo} occupied={Boolean(p)}>
-                {p ? (
-                  <DraggableSeatLabel
-                    personId={p.id}
-                    personName={p.name}
-                    sourceTableId={table.id}
-                    sourceSeatNo={seatNo}
-                  />
-                ) : (
-                  <div className="flex min-h-[44px] flex-col items-center justify-center gap-1 rounded-xl bg-white/30 px-2 py-2 text-center">
-                    <span className="inline-flex h-7 w-7 rounded-full border border-dashed border-slate-300 bg-white" />
-                    <span className="text-[11px] font-medium text-slate-500">空位</span>
-                  </div>
-                )}
-              </DroppableSeatTarget>
-            </div>
-          );
-        })}
+            return (
+              <div className="flex min-h-[48px] flex-col items-center justify-end gap-0.5">
+                <span
+                  className={`max-w-[5.5rem] cursor-default truncate text-center text-[10px] font-medium ${
+                    roleLabel ? "text-slate-600" : "text-slate-400"
+                  }`}
+                  title={labelTitle}
+                >
+                  {labelText}
+                </span>
+                <DroppableSeatTarget tableId={table.id} seatNo={seatNo} occupied={Boolean(person)}>
+                  {person ? (
+                    <DraggableSeatLabel
+                      personId={person.id}
+                      personName={person.name}
+                      sourceTableId={table.id}
+                      sourceSeatNo={seatNo}
+                      density="comfortable"
+                      searchHighlight={Boolean(searchMatch)}
+                    />
+                  ) : (
+                    <div className="flex min-h-[44px] flex-col items-center justify-center gap-0.5 px-1 py-1 text-center">
+                      <span className="text-[11px] font-medium text-slate-500">空位</span>
+                    </div>
+                  )}
+                </DroppableSeatTarget>
+              </div>
+            );
+          }}
+        />
       </div>
     </section>
   );

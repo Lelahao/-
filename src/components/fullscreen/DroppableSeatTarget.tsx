@@ -16,14 +16,21 @@ export function DroppableSeatTarget(props: {
 
   const base = props.occupied
     ? isOver
-      ? "border-2 border-dashed border-orange-400 bg-orange-50/60 ring-2 ring-orange-200/70"
-      : "border border-slate-200/90 bg-white"
+      ? "bg-orange-50/60"
+      : "border-0 bg-transparent"
     : isOver
-      ? "border-2 border-dashed border-orange-400 bg-orange-50/60 ring-2 ring-orange-200/70"
-      : "border border-dashed border-slate-200/80 bg-slate-50/40";
+      ? "bg-orange-50/50"
+      : "border-0 bg-transparent";
 
   return (
-    <div ref={setNodeRef} className={["rounded-2xl p-1 transition-colors", base].join(" ")}>
+    <div
+      ref={setNodeRef}
+      className={[
+        "min-h-[2.5rem] rounded-none p-0 transition-colors",
+        props.occupied ? "" : "flex min-h-[3rem] items-end justify-center pb-0.5",
+        base,
+      ].join(" ")}
+    >
       {props.children}
     </div>
   );

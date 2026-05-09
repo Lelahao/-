@@ -10,6 +10,12 @@ export type TableDefinition = {
   no: number;
   hallName: string;
   capacity: number;
+  isMainTable?: boolean;
+  tableRole?: string;
+  role?: string;
+  name?: string;
+  label?: string;
+  note?: string;
 };
 
 export type LayoutSnapshot = {

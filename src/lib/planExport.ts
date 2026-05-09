@@ -1,7 +1,62 @@
-import { Document, HeadingLevel, Packer, Paragraph, TextRun } from "docx";
+import ExcelJS from "exceljs";
+import {
+  AlignmentType,
+  Document,
+  FileChild,
+  HeadingLevel,
+  ImageRun,
+  Packer,
+  Paragraph,
+  Table,
+  TableCell,
+  TableRow,
+  TextRun,
+  WidthType,
+} from "docx";
 import pptxgen from "pptxgenjs";
-import * as XLSX from "xlsx";
 import type { LayoutSnapshot } from "@/fullscreen/types";
+import type { ExportScene } from "@/features/export/exportScene";
+import {
+  buildExportSceneFromLayout,
+  buildVersionExportScene,
+  DEFAULT_EXPORT_PLAN_NAME,
+  sanitizePlanFileBase,
+  versionOverviewExportFileBase,
+} from "@/features/export/exportScene";
+import { exportOverviewImage, renderOverviewPng } from "@/features/export/exportOverviewImage";
+
+export type PlanVersionExportFormat = "png" | "xlsx" | "docx" | "pptx";
+
+/**
+ * 历史版本导出：数据仅来自该版本的 layout 快照（须由调用方经 getPlanVersion + snapshotToLayoutSnapshot 得到 layout）。
+ */
+export async function exportPlanVersionSnapshot(
+  layout: LayoutSnapshot,
+  meta: { planDisplayName: string; versionNo: number; versionName: string | null; savedAtMs: number },
+  format: PlanVersionExportFormat,
+): Promise<void> {
+  const scene = buildVersionExportScene(layout, meta);
+  const base = versionOverviewExportFileBase(meta.planDisplayName, meta.versionNo);
+  switch (format) {
+    case "png":
+      await exportOverviewImage(scene, base);
+      return;
+    case "xlsx":
+      await exportSceneExcel(scene, base);
+      return;
+    case "docx":
+      await exportSceneWord(scene, base);
+      return;
+    case "pptx":
+      await exportScenePpt(scene, base);
+      return;
+    default: {
+      const _exhaustive: never = format;
+      window.alert("该格式导出功能待接入");
+      void _exhaustive;
+    }
+  }
+}
 
 function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
@@ -18,135 +73,292 @@ function exportBasename() {
   return `paizuo-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}`;
 }
 
+function exportFileBaseName(scene: { planName: string }) {
+  return `${sanitizePlanFileBase(scene.planName)}_排座总览`;
+}
+
+export async function exportSceneExcel(scene: ExportScene, fileBase?: string): Promise<void> {
+  const { dataUrl } = await renderOverviewPng(scene);
+  const base64 = dataUrl.replace(/^data:image\/\w+;base64,/, "");
+  const outBase = fileBase ?? exportFileBaseName(scene);
+
+  const wb = new ExcelJS.Workbook();
+  wb.creator = "排座助手";
+
+  const s1 = wb.addWorksheet("排座总览");
+  s1.addRow([scene.planName]);
+  s1.getRow(1).font = { size: 16, bold: true };
+  if (scene.versionExport) {
+    s1.addRow([scene.versionExport.versionLine]);
+    s1.addRow([scene.versionExport.savedAtLine]);
+  } else {
+    s1.addRow([`导出时间：${new Date().toLocaleString("zh-CN", { hour12: false })}`]);
+  }
+  s1.addRow([
+    `总桌数：${scene.stats.tableCount}，人员条目：${scene.stats.peopleCount}，已安排：${scene.stats.assignedCount}，未安排：${scene.stats.unassignedCount}`,
+  ]);
+  s1.addRow([]);
+
+  const imgId = wb.addImage({ base64, extension: "png" });
+  s1.addImage(imgId, {
+    tl: { col: 0, row: s1.rowCount },
+    ext: { width: 900, height: 1200 },
+  });
+  s1.getColumn(1).width = 120;
+
+  const s2 = wb.addWorksheet("桌次明细");
+  s2.addRow(["桌号", "桌别", "桌型", "容量", "已安排人数", "空位数"]);
+  for (const t of scene.tables) {
+    const occ = t.seats.filter((s) => !s.isEmpty).length;
+    s2.addRow([
+      t.tableNo,
+      t.tableRole ?? t.hallName ?? "",
+      t.tableKind ?? "",
+      t.capacity,
+      occ,
+      t.capacity - occ,
+    ]);
+  }
+
+  const s3 = wb.addWorksheet("人员座位明细");
+  s3.addRow(["桌号", "座位号", "方位", "姓名", "备注"]);
+  for (const row of scene.seats) {
+    s3.addRow([row.tableNo, row.seatNo, row.roleLabel ?? "", row.personName ?? "", ""]);
+  }
+
+  const s4 = wb.addWorksheet("未安排人员");
+  if (scene.unassignedPeople.length === 0) {
+    s4.addRow(["（无未安排人员）"]);
+  } else {
+    s4.addRow(["姓名"]);
+    for (const p of scene.unassignedPeople) {
+      s4.addRow([p.name]);
+    }
+  }
+
+  const buf = await wb.xlsx.writeBuffer();
+  downloadBlob(
+    new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
+    `${outBase}.xlsx`,
+  );
+}
+
 export function exportLayoutJson(layout: LayoutSnapshot): void {
   const blob = new Blob([JSON.stringify(layout, null, 2)], { type: "application/json;charset=utf-8" });
   downloadBlob(blob, `${exportBasename()}.json`);
 }
 
-export function exportLayoutExcel(layout: LayoutSnapshot): void {
-  const wb = XLSX.utils.book_new();
-
-  const summaryData = [
-    ["排座助手 · 方案导出", ""],
-    ["导出时间", new Date().toLocaleString("zh-CN")],
-    ["桌数", String(layout.tables.length)],
-    ["人员条目", String(layout.people.length)],
-  ];
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(summaryData), "总览");
-
-  const tableSheet = [["桌号", "厅名", "容量"]];
-  for (const t of layout.tables) {
-    tableSheet.push([String(t.no), t.hallName, String(t.capacity)]);
-  }
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(tableSheet), "桌次");
-
-  for (const t of layout.tables) {
-    const rows = [["座位号", "姓名", "人员ID"]];
-    for (let sn = 1; sn <= t.capacity; sn++) {
-      const p = layout.people.find((x) => x.assignedTableId === t.id && x.assignedSeatNo === sn);
-      rows.push([String(sn), p?.name ?? "", p?.id ?? ""]);
-    }
-    const sh = `桌${t.no}`.slice(0, 31);
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), sh);
-  }
-
-  XLSX.writeFile(wb, `${exportBasename()}.xlsx`);
+/**
+ * 工作表：排座总览（含 exceljs 嵌入的总览 PNG）、桌次明细、人员座位明细、未安排人员。
+ * 总览图与 `renderOverviewPng` / PNG 下载一致。
+ */
+export async function exportLayoutExcel(layout: LayoutSnapshot): Promise<void> {
+  const scene = buildExportSceneFromLayout(layout, DEFAULT_EXPORT_PLAN_NAME);
+  await exportSceneExcel(scene);
 }
 
-export async function exportLayoutWord(layout: LayoutSnapshot): Promise<void> {
-  const children: Paragraph[] = [
+export async function exportSceneWord(scene: ExportScene, fileBase?: string): Promise<void> {
+  const { blob } = await renderOverviewPng(scene);
+  const imageBuffer = new Uint8Array(await blob.arrayBuffer());
+  const outBase = fileBase ?? exportFileBaseName(scene);
+
+  const children: FileChild[] = [
     new Paragraph({
-      text: "排座方案",
-      heading: HeadingLevel.HEADING_1,
+      text: scene.planName,
+      heading: HeadingLevel.TITLE,
     }),
-    new Paragraph({
-      children: [new TextRun({ text: `导出时间：${new Date().toLocaleString("zh-CN")}` })],
-    }),
+  ];
+  if (scene.versionExport) {
+    children.push(new Paragraph(scene.versionExport.versionLine));
+    children.push(new Paragraph(scene.versionExport.savedAtLine));
+  }
+  children.push(
     new Paragraph({
       children: [
         new TextRun({
-          text: `共 ${layout.tables.length} 桌，${layout.people.length} 条人员记录。`,
+          text: `总桌数：${scene.stats.tableCount}，人员条目：${scene.stats.peopleCount}，已安排：${scene.stats.assignedCount}，未安排：${scene.stats.unassignedCount}。`,
         }),
       ],
     }),
-  ];
+  );
+  if (!scene.versionExport) {
+    children.push(
+      new Paragraph(`导出时间：${new Date().toLocaleString("zh-CN", { hour12: false })}`),
+    );
+  }
+  children.push(
+    new Paragraph({
+      text: "一、排座总览",
+      heading: HeadingLevel.HEADING_1,
+    }),
+    new Paragraph({
+      alignment: AlignmentType.CENTER,
+      children: [
+        new ImageRun({
+          type: "png",
+          data: imageBuffer,
+          transformation: { width: 560, height: 760 },
+        }),
+      ],
+    }),
+    new Paragraph({
+      text: "二、桌次明细",
+      heading: HeadingLevel.HEADING_1,
+    }),
+  );
 
-  for (const t of layout.tables) {
+  for (const t of scene.tables) {
     children.push(
       new Paragraph({
-        text: `${t.no} 号桌 · ${t.hallName}（${t.capacity} 人）`,
+        text: `${t.tableNo} 号桌 · ${t.hallName}（${t.tableKind ?? ""}，${t.capacity} 人）`,
         heading: HeadingLevel.HEADING_2,
       }),
     );
-    for (let sn = 1; sn <= t.capacity; sn++) {
-      const p = layout.people.find((x) => x.assignedTableId === t.id && x.assignedSeatNo === sn);
-      children.push(
-        new Paragraph({
+    const header = new TableRow({
+      tableHeader: true,
+      children: [
+        new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: "座位号", bold: true })] })] }),
+        new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: "方位", bold: true })] })] }),
+        new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: "姓名", bold: true })] })] }),
+      ],
+    });
+    const body = t.seats.map(
+      (s) =>
+        new TableRow({
           children: [
-            new TextRun({ text: `${sn} 号座：`, bold: true }),
-            new TextRun({ text: p ? p.name : "（空）" }),
+            new TableCell({ children: [new Paragraph(String(s.seatNo))] }),
+            new TableCell({ children: [new Paragraph(s.roleLabel ?? "")] }),
+            new TableCell({ children: [new Paragraph(s.personName ?? "")] }),
           ],
         }),
-      );
+    );
+    children.push(new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows: [header, ...body] }));
+  }
+
+  children.push(new Paragraph({ text: "三、未安排人员", heading: HeadingLevel.HEADING_1 }));
+  if (scene.unassignedPeople.length === 0) {
+    children.push(new Paragraph("无"));
+  } else {
+    for (const p of scene.unassignedPeople) {
+      children.push(new Paragraph(`· ${p.name}`));
     }
   }
 
   const doc = new Document({
-    sections: [
-      {
-        properties: {},
-        children,
-      },
-    ],
+    sections: [{ properties: {}, children }],
   });
 
-  const blob = await Packer.toBlob(doc);
-  downloadBlob(blob, `${exportBasename()}.docx`);
+  const outBlob = await Packer.toBlob(doc);
+  downloadBlob(outBlob, `${outBase}.docx`);
 }
 
-/** PPT 中每张幻灯片为一张桌；姓名为独立文本框，可在 PowerPoint 中点选编辑。 */
-export function exportLayoutPpt(layout: LayoutSnapshot): void {
+export async function exportLayoutWord(layout: LayoutSnapshot): Promise<void> {
+  const scene = buildExportSceneFromLayout(layout, DEFAULT_EXPORT_PLAN_NAME);
+  await exportSceneWord(scene);
+}
+
+export async function exportScenePpt(scene: ExportScene, fileBase?: string): Promise<void> {
+  const { dataUrl } = await renderOverviewPng(scene);
+  const outBase = fileBase ?? exportFileBaseName(scene);
+
   const pptx = new pptxgen();
   pptx.author = "排座助手";
-  pptx.title = "圆桌排座";
+  pptx.title = scene.planName;
 
-  for (const t of layout.tables) {
-    const slide = pptx.addSlide();
-    slide.addText(`${t.no} 号桌 · ${t.hallName}`, {
-      x: 0.4,
-      y: 0.25,
-      w: 9,
-      h: 0.55,
-      fontSize: 22,
-      bold: true,
-      color: "1e293b",
+  const slide1 = pptx.addSlide();
+  slide1.addText(scene.planName, {
+    x: 0.35,
+    y: 0.2,
+    w: 9.3,
+    h: 0.55,
+    fontSize: 22,
+    bold: true,
+    color: "0f172a",
+  });
+  let yNext = 0.52;
+  if (scene.versionExport) {
+    slide1.addText(scene.versionExport.versionLine, {
+      x: 0.35,
+      y: yNext,
+      w: 9.3,
+      h: 0.3,
+      fontSize: 13,
+      color: "334155",
     });
-    slide.addText(`${t.capacity} 人桌 · 可在编辑视图下单击姓名修改`, {
-      x: 0.4,
-      y: 0.85,
-      w: 9,
+    yNext += 0.34;
+    slide1.addText(scene.versionExport.savedAtLine, {
+      x: 0.35,
+      y: yNext,
+      w: 9.3,
+      h: 0.26,
+      fontSize: 10,
+      color: "94a3b8",
+    });
+    yNext += 0.3;
+  }
+  slide1.addText(
+    `总桌数：${scene.stats.tableCount} ｜ 人员条目：${scene.stats.peopleCount} ｜ 已安排：${scene.stats.assignedCount} ｜ 未安排：${scene.stats.unassignedCount}`,
+    { x: 0.35, y: yNext, w: 9.3, h: 0.4, fontSize: 12, color: "475569" },
+  );
+  yNext += 0.44;
+  if (!scene.versionExport) {
+    slide1.addText(`导出时间：${new Date().toLocaleString("zh-CN", { hour12: false })}`, {
+      x: 0.35,
+      y: yNext,
+      w: 9.3,
+      h: 0.3,
+      fontSize: 10,
+      color: "94a3b8",
+    });
+    yNext += 0.34;
+  }
+  const imgY = Math.max(1.22, yNext + 0.08);
+  slide1.addImage({ data: dataUrl, x: 0.3, y: imgY, w: 9.4, h: 5.0 });
+
+  for (const t of scene.tables) {
+    const slide = pptx.addSlide();
+    slide.addText(`${t.tableNo} 号桌 · ${t.hallName}`, {
+      x: 0.35,
+      y: 0.22,
+      w: 9.2,
+      h: 0.5,
+      fontSize: 20,
+      bold: true,
+      color: "0f172a",
+    });
+    const occ = t.seats.filter((s) => !s.isEmpty).length;
+    slide.addText(`${t.tableKind ?? ""} · ${t.capacity} 人 · 已安排 ${occ} / ${t.capacity}`, {
+      x: 0.35,
+      y: 0.72,
+      w: 9.2,
       h: 0.35,
       fontSize: 12,
       color: "64748b",
     });
 
     const cols = Math.min(5, Math.ceil(Math.sqrt(t.capacity)) + 1);
-    const cellW = 8.6 / cols;
-    const rowH = 1.05;
+    const cellW = 8.8 / cols;
+    const rowH = 0.95;
     let idx = 0;
-    for (let sn = 1; sn <= t.capacity; sn++) {
-      const p = layout.people.find((x) => x.assignedTableId === t.id && x.assignedSeatNo === sn);
+    for (const s of t.seats) {
       const row = Math.floor(idx / cols);
       const col = idx % cols;
-      const x = 0.45 + col * cellW;
-      const y = 1.35 + row * rowH;
-      slide.addText(`${sn} 号`, { x, y, w: cellW - 0.1, h: 0.28, fontSize: 11, color: "94a3b8" });
-      slide.addText(p?.name ?? "空座", {
+      const x = 0.4 + col * cellW;
+      const y = 1.15 + row * rowH;
+      slide.addText(`${s.seatNo} · ${s.roleLabel ?? ""}`, {
         x,
-        y: y + 0.32,
-        w: cellW - 0.1,
-        h: 0.65,
-        fontSize: 14,
+        y,
+        w: cellW - 0.08,
+        h: 0.26,
+        fontSize: 9,
+        color: "94a3b8",
+      });
+      slide.addText(s.personName ?? "空座", {
+        x,
+        y: y + 0.28,
+        w: cellW - 0.08,
+        h: 0.58,
+        fontSize: 12,
         color: "0f172a",
         align: "center",
         valign: "middle",
@@ -155,7 +367,32 @@ export function exportLayoutPpt(layout: LayoutSnapshot): void {
     }
   }
 
-  void pptx.writeFile({ fileName: `${exportBasename()}.pptx` });
+  const last = pptx.addSlide();
+  last.addText("未安排人员", {
+    x: 0.35,
+    y: 0.28,
+    w: 9.2,
+    h: 0.45,
+    fontSize: 20,
+    bold: true,
+    color: "0f172a",
+  });
+  last.addText(scene.unassignedPeople.length === 0 ? "无" : scene.unassignedPeople.map((p) => p.name).join("、"), {
+    x: 0.35,
+    y: 0.85,
+    w: 9.2,
+    h: 4.6,
+    fontSize: 14,
+    color: "334155",
+    valign: "top",
+  });
+
+  await pptx.writeFile({ fileName: `${outBase}.pptx` });
+}
+
+export async function exportLayoutPpt(layout: LayoutSnapshot): Promise<void> {
+  const scene = buildExportSceneFromLayout(layout, DEFAULT_EXPORT_PLAN_NAME);
+  await exportScenePpt(scene);
 }
 
 export function buildLayoutSvg(layout: LayoutSnapshot): string {
@@ -255,9 +492,8 @@ function svgToRaster(svg: string, type: "image/png" | "image/jpeg"): Promise<Blo
 }
 
 export async function exportLayoutPng(layout: LayoutSnapshot): Promise<void> {
-  const svg = buildLayoutSvg(layout);
-  const blob = await svgToRaster(svg, "image/png");
-  downloadBlob(blob, `${exportBasename()}.png`);
+  const scene = buildExportSceneFromLayout(layout, DEFAULT_EXPORT_PLAN_NAME);
+  await exportOverviewImage(scene);
 }
 
 export async function exportLayoutJpg(layout: LayoutSnapshot): Promise<void> {
