@@ -17,16 +17,23 @@ import {
   UNASSIGNED_POOL_DROP_ID,
 } from "@/components/fullscreen/DroppableUnassignedPool";
 import { RoundOverviewBoard } from "@/components/round/RoundOverviewBoard";
+import { AddPersonModal } from "@/components/round/AddPersonModal";
+import { BulkImportPeopleModal } from "@/components/round/BulkImportPeopleModal";
+import { ImportResultModal } from "@/components/round/ImportResultModal";
 import { buildSeedLayout } from "@/fullscreen/seedLayout";
 import { movePersonToSeat, unassignPerson } from "@/fullscreen/layoutOps";
 import { loadLayoutSnapshot, saveLayoutSnapshot } from "@/fullscreen/roundStorage";
 import type { LayoutSnapshot, PersonRecord, SeatDragData, TableDefinition } from "@/fullscreen/types";
-import { roundPlanToLayout } from "@/lib/layoutBridge";
+import { layoutToRoundPlan, planDetailToLayoutSnapshot, roundPlanToLayout } from "@/lib/layoutBridge";
 import { isLinkableBackendPlanId } from "@/lib/roundBackendPlanId";
+import { getPlanDetail, type PeopleImportResult } from "@/api/plans";
 import { useRoundPersonSearchStore, roundPersonSearchMatches } from "@/stores/roundPersonSearchStore";
 import { useRoundPlanDemoStore } from "@/stores/roundPlanDemoStore";
+import { DEFAULT_EXPORT_PLAN_NAME } from "@/features/export/exportScene";
 
 const TABLE_ORDER_MIME = "application/x-paizuo-table-order";
+
+const ROUND_LINKED_PLAN_NAME_STORAGE = "paizuo-round-linked-plan-name";
 
 function reorderTablesList(prev: TableDefinition[], sourceId: string, targetId: string): TableDefinition[] {
   if (sourceId === targetId) return prev;
@@ -92,8 +99,40 @@ export function FullscreenRoundOverview() {
   const [activeDrag, setActiveDrag] = useState<SeatDragData | null>(null);
   const [saving, setSaving] = useState(false);
   const [tableReorderDropId, setTableReorderDropId] = useState<string | null>(null);
+  const [addPersonOpen, setAddPersonOpen] = useState(false);
+  const [bulkImportOpen, setBulkImportOpen] = useState(false);
+  const [importResultOpen, setImportResultOpen] = useState(false);
+  const [importResult, setImportResult] = useState<PeopleImportResult | null>(null);
 
   const plan = useRoundPlanDemoStore((s) => s.plan);
+  const setPlan = useRoundPlanDemoStore((s) => s.setPlan);
+
+  const navState = location.state as { planName?: string } | null;
+  const fullscreenPlanName = useMemo(() => {
+    if (navState?.planName?.trim()) return navState.planName.trim();
+    try {
+      const n = localStorage.getItem(ROUND_LINKED_PLAN_NAME_STORAGE);
+      if (n?.trim()) return n.trim();
+    } catch {
+      /* ignore */
+    }
+    return DEFAULT_EXPORT_PLAN_NAME;
+  }, [navState, location.key, plan.planId]);
+
+  const refreshPlanFromBackend = async () => {
+    const pid = plan.planId;
+    if (!isLinkableBackendPlanId(pid)) return;
+    const detail = await getPlanDetail(pid);
+    const layout = planDetailToLayoutSnapshot(detail);
+    setPeople(layout.people);
+    setTables(layout.tables);
+    setPlan(layoutToRoundPlan(layout, pid));
+    try {
+      await saveLayoutSnapshot(layout);
+    } catch {
+      /* ignore */
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -359,16 +398,36 @@ export function FullscreenRoundOverview() {
         <div className="flex min-h-0 min-w-0 flex-1 p-4">
           <RoundOverviewBoard
             mode="fullscreen"
-            planName="2026 春季接待 · 锦绣厅"
+            planName={fullscreenPlanName}
             stats={boardStats}
             tableCount={tables.length}
             gridCols={colsPerRow}
             preGrid={
               <DroppableUnassignedPool>
-                <div className="text-sm font-semibold text-slate-900">未安排人员（{unassigned.length}）</div>
-                <p className="mt-1 text-xs text-slate-500">
-                  已入座人员可拖入此处取消桌位；此处人员可拖回空座入座。
-                </p>
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="text-sm font-semibold text-slate-900">未安排人员（{unassigned.length}）</div>
+                    <p className="mt-1 text-xs text-slate-500">
+                      已入座人员可拖入此处取消桌位；此处人员可拖回空座入座。
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setAddPersonOpen(true)}
+                      className="inline-flex items-center rounded-lg border border-orange-500 bg-white px-3 py-1.5 text-sm font-medium text-orange-600 shadow-sm hover:bg-orange-50"
+                    >
+                      + 添加人员
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setBulkImportOpen(true)}
+                      className="inline-flex items-center rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+                    >
+                      批量导入
+                    </button>
+                  </div>
+                </div>
                 <div className="mt-3 flex min-h-[44px] flex-wrap gap-2">
                   {unassigned.map((p) => (
                     <div
@@ -426,6 +485,51 @@ export function FullscreenRoundOverview() {
           ) : null}
         </DragOverlay>
       </DndContext>
+
+      <AddPersonModal
+        open={addPersonOpen}
+        onClose={() => setAddPersonOpen(false)}
+        planId={plan.planId}
+        planDisplayName={fullscreenPlanName}
+        onSuccess={refreshPlanFromBackend}
+      />
+
+      <BulkImportPeopleModal
+        open={bulkImportOpen}
+        onClose={() => setBulkImportOpen(false)}
+        planId={plan.planId}
+        planDisplayName={fullscreenPlanName}
+        onImportComplete={async (res) => {
+          await refreshPlanFromBackend();
+          setImportResult(res);
+          setImportResultOpen(true);
+        }}
+      />
+
+      <ImportResultModal
+        open={importResultOpen}
+        onClose={() => {
+          setImportResultOpen(false);
+          setImportResult(null);
+        }}
+        planDisplayName={fullscreenPlanName}
+        result={importResult}
+        onContinueAdd={() => {
+          setImportResultOpen(false);
+          setImportResult(null);
+          setAddPersonOpen(true);
+        }}
+        onViewPersonManage={() => {
+          setImportResultOpen(false);
+          setImportResult(null);
+          navigate("/round/overview", { state: { openPersonManage: true } });
+        }}
+        onDone={async () => {
+          await refreshPlanFromBackend();
+          setImportResultOpen(false);
+          setImportResult(null);
+        }}
+      />
     </div>
   );
 }

@@ -1,10 +1,37 @@
 import { apiFetchJson } from "./client";
 import type {
+  PersonRow,
   PlanDetail,
   PlanRow,
   PlanVersionCreateResult,
   PlanVersionListItem,
 } from "@/lib/dbTypes";
+
+export { listPeople, putPeople } from "./people";
+
+export type CreatePersonInput = {
+  name: string;
+  region: string;
+  position: string;
+  role: string;
+};
+
+export type PeopleImportFailureRow = {
+  row: number;
+  name: string;
+  region: string;
+  position: string;
+  role: string;
+  reason: string;
+};
+
+export type PeopleImportResult = {
+  planUpdatedAt: number;
+  success: Array<{ id: string; name: string; region: string; position: string; role: string }>;
+  failures: PeopleImportFailureRow[];
+  successCount: number;
+  failureCount: number;
+};
 
 export async function listPlans(): Promise<PlanRow[]> {
   const r = await apiFetchJson<{ plans: PlanRow[] }>("/api/plans");
@@ -72,4 +99,56 @@ export async function getPlanVersion(
   return apiFetchJson(
     `/api/plans/${encodeURIComponent(planId)}/versions/${encodeURIComponent(versionId)}`,
   );
+}
+
+export async function createPerson(
+  planId: string,
+  input: CreatePersonInput,
+): Promise<{ person: PersonRow; planUpdatedAt: number }> {
+  return apiFetchJson(`/api/plans/${encodeURIComponent(planId)}/people`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function updatePerson(
+  planId: string,
+  personId: string,
+  input: Partial<CreatePersonInput>,
+): Promise<{ person: PersonRow; planUpdatedAt: number }> {
+  return apiFetchJson(
+    `/api/plans/${encodeURIComponent(planId)}/people/${encodeURIComponent(personId)}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    },
+  );
+}
+
+export async function deletePerson(
+  planId: string,
+  personId: string,
+): Promise<{ ok: boolean; planUpdatedAt: number }> {
+  return apiFetchJson(`/api/plans/${encodeURIComponent(planId)}/people/${encodeURIComponent(personId)}`, {
+    method: "DELETE",
+  });
+}
+
+export async function unassignPerson(
+  planId: string,
+  personId: string,
+): Promise<{ ok: boolean; planUpdatedAt: number }> {
+  return apiFetchJson(
+    `/api/plans/${encodeURIComponent(planId)}/people/${encodeURIComponent(personId)}/unassign`,
+    { method: "POST" },
+  );
+}
+
+export async function importPeople(planId: string, file: File): Promise<PeopleImportResult> {
+  const fd = new FormData();
+  fd.append("file", file);
+  return apiFetchJson(`/api/plans/${encodeURIComponent(planId)}/people/import`, {
+    method: "POST",
+    body: fd,
+  });
 }

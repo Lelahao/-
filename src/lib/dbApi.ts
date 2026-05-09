@@ -132,6 +132,9 @@ export async function upsertPlanPeople(
   const rows = people.map((p) => ({
     id: p.id,
     displayName: p.displayName,
+    region: p.region,
+    position: p.position,
+    role: p.role,
     assignedTableId: p.assignedTableId,
     assignedSeatNo: p.assignedSeatNo,
     metaJson: p.metaJson,

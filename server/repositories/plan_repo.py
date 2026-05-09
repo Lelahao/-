@@ -109,7 +109,7 @@ def get_plan_detail(conn: sqlite3.Connection, plan_id: str) -> dict[str, Any]:
 
     cur = conn.execute(
         """
-        SELECT id, plan_id, display_name, assigned_table_id, assigned_seat_no, meta_json, created_at, updated_at
+        SELECT id, plan_id, display_name, region, position, role, assigned_table_id, assigned_seat_no, meta_json, created_at, updated_at
         FROM people WHERE plan_id = ?1 ORDER BY id
         """,
         (plan_id,),
@@ -119,6 +119,9 @@ def get_plan_detail(conn: sqlite3.Connection, plan_id: str) -> dict[str, Any]:
             "id": r["id"],
             "planId": r["plan_id"],
             "displayName": r["display_name"],
+            "region": r["region"],
+            "position": r["position"],
+            "role": r["role"],
             "assignedTableId": r["assigned_table_id"],
             "assignedSeatNo": r["assigned_seat_no"],
             "metaJson": r["meta_json"],

@@ -13,6 +13,12 @@ export type PersonRow = {
   id: string;
   planId: string;
   displayName: string;
+  /** 区域（人员档案） */
+  region: string | null;
+  /** 岗位 */
+  position: string | null;
+  /** 自定义角色文案 */
+  role: string | null;
   assignedTableId: string | null;
   assignedSeatNo: number | null;
   metaJson: string | null;

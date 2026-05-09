@@ -47,7 +47,9 @@ export async function apiFetchJson<T>(path: string, init?: RequestInit): Promise
   const url = joinUrl(path);
   const headers = new Headers(init?.headers);
   headers.set("Accept", "application/json");
-  if (init?.body !== undefined && !headers.has("Content-Type")) {
+  const body = init?.body;
+  const isFormData = typeof FormData !== "undefined" && body instanceof FormData;
+  if (body !== undefined && !isFormData && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
 

@@ -1,10 +1,14 @@
 import { useEffect, useMemo, useState, type DragEvent } from "react";
-import { useLocation } from "react-router-dom";
-import { getPlanDetail } from "@/api/plans";
+import { useLocation, useNavigate } from "react-router-dom";
+import { getPlanDetail, type PeopleImportResult } from "@/api/plans";
 import { RoundTableCard } from "@/components/RoundTableCard";
 import { RoundVersionHistoryDrawer } from "@/components/RoundVersionHistoryDrawer";
 import { RoundCheckPanel } from "@/components/RoundCheckPanel";
 import { RoundOverviewBoard, overviewGridColsClass, overviewGridColsStyle } from "@/components/round/RoundOverviewBoard";
+import { AddPersonModal, type AddPersonEditTarget } from "@/components/round/AddPersonModal";
+import { PersonManageModal } from "@/components/round/PersonManageModal";
+import { BulkImportPeopleModal } from "@/components/round/BulkImportPeopleModal";
+import { ImportResultModal } from "@/components/round/ImportResultModal";
 import { loadLayoutSnapshot, saveLayoutSnapshot } from "@/fullscreen/roundStorage";
 import { buildRoundOverviewTableRows } from "@/lib/buildRoundOverviewTableRows";
 import { DEFAULT_EXPORT_PLAN_NAME } from "@/features/export/exportScene";
@@ -68,6 +72,7 @@ function readColsPreference(fallback: number): number {
 
 export function RoundOverviewPage() {
   const location = useLocation();
+  const navigate = useNavigate();
   const plan = useRoundPlanDemoStore((s) => s.plan);
   const setPlan = useRoundPlanDemoStore((s) => s.setPlan);
   const personSearchQuery = useRoundPersonSearchStore((s) => s.query);
@@ -77,6 +82,13 @@ export function RoundOverviewPage() {
 
   const [colsPerRow, setColsPerRow] = useState<number>(() => readColsPreference(4));
   const [assignedListOpen, setAssignedListOpen] = useState(false);
+  const [addPersonOpen, setAddPersonOpen] = useState(false);
+  const [personManageOpen, setPersonManageOpen] = useState(false);
+  const [editPerson, setEditPerson] = useState<AddPersonEditTarget | null>(null);
+  const [personManageReloadKey, setPersonManageReloadKey] = useState(0);
+  const [bulkImportOpen, setBulkImportOpen] = useState(false);
+  const [importResultOpen, setImportResultOpen] = useState(false);
+  const [importResult, setImportResult] = useState<PeopleImportResult | null>(null);
 
   const navState = location.state as { planId?: string; planName?: string } | null;
 
@@ -94,6 +106,18 @@ export function RoundOverviewPage() {
   const overviewPlanSubtitle = isLinkableBackendPlanId(plan.planId)
     ? "后端方案 · 与检查引擎联动"
     : "演示数据 · 与检查引擎联动";
+
+  useEffect(() => {
+    const st = location.state as Record<string, unknown> | null;
+    if (!st?.openPersonManage) return;
+    setPersonManageOpen(true);
+    const next = { ...st };
+    delete next.openPersonManage;
+    navigate(`${location.pathname}${location.search}`, {
+      replace: true,
+      state: Object.keys(next).length > 0 ? next : null,
+    });
+  }, [location.state, location.pathname, location.search, navigate]);
 
   useEffect(() => {
     let cancelled = false;
@@ -317,6 +341,20 @@ export function RoundOverviewPage() {
     }
   };
 
+  const refreshPlanFromBackend = async () => {
+    const pid = plan.planId;
+    if (!isLinkableBackendPlanId(pid)) return;
+    const detail = await getPlanDetail(pid);
+    const layout = planDetailToLayoutSnapshot(detail);
+    setPlan(layoutToRoundPlan(layout, pid));
+    try {
+      await saveLayoutSnapshot(layout);
+    } catch {
+      /* ignore */
+    }
+    setPersonManageReloadKey((k) => k + 1);
+  };
+
   return (
     <>
       <RoundOverviewBoard
@@ -379,6 +417,32 @@ export function RoundOverviewPage() {
               <div className="min-w-0 flex-1">
                 <div className="text-xs text-slate-500">未安排人数</div>
                 <div className="mt-1 text-lg font-semibold tracking-tight text-slate-900 sm:text-xl">{unassignedCount} 人</div>
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditPerson(null);
+                      setAddPersonOpen(true);
+                    }}
+                    className="inline-flex items-center rounded-lg border border-orange-500 bg-white px-3 py-1.5 text-sm font-medium text-orange-600 shadow-sm hover:bg-orange-50"
+                  >
+                    + 添加人员
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPersonManageOpen(true)}
+                    className="inline-flex items-center rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+                  >
+                    人员管理
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setBulkImportOpen(true)}
+                    className="inline-flex items-center rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+                  >
+                    批量导入
+                  </button>
+                </div>
                 {unassignedCount === 0 ? (
                   <p className="mt-3 text-sm text-slate-600">全部人员已安排</p>
                 ) : (
@@ -584,6 +648,75 @@ export function RoundOverviewPage() {
       ) : null}
 
       <RoundVersionHistoryDrawer planId={plan.planId} colsPerRow={colsPerRow} planDisplayName={overviewPlanName} />
+
+      <AddPersonModal
+        open={addPersonOpen}
+        onClose={() => {
+          setAddPersonOpen(false);
+          setEditPerson(null);
+        }}
+        planId={plan.planId}
+        planDisplayName={overviewPlanName}
+        onSuccess={refreshPlanFromBackend}
+        editPerson={editPerson}
+      />
+
+      <PersonManageModal
+        open={personManageOpen}
+        onClose={() => setPersonManageOpen(false)}
+        planId={plan.planId}
+        planDisplayName={overviewPlanName}
+        planSnapshot={plan}
+        reloadKey={personManageReloadKey}
+        onAddClick={() => {
+          setEditPerson(null);
+          setAddPersonOpen(true);
+        }}
+        onEditClick={(p) => {
+          setEditPerson(p);
+          setAddPersonOpen(true);
+        }}
+        onBulkImportClick={() => setBulkImportOpen(true)}
+        onRefresh={refreshPlanFromBackend}
+      />
+
+      <BulkImportPeopleModal
+        open={bulkImportOpen}
+        onClose={() => setBulkImportOpen(false)}
+        planId={plan.planId}
+        planDisplayName={overviewPlanName}
+        onImportComplete={async (res) => {
+          await refreshPlanFromBackend();
+          setImportResult(res);
+          setImportResultOpen(true);
+        }}
+      />
+
+      <ImportResultModal
+        open={importResultOpen}
+        onClose={() => {
+          setImportResultOpen(false);
+          setImportResult(null);
+        }}
+        planDisplayName={overviewPlanName}
+        result={importResult}
+        onContinueAdd={() => {
+          setImportResultOpen(false);
+          setImportResult(null);
+          setEditPerson(null);
+          setAddPersonOpen(true);
+        }}
+        onViewPersonManage={() => {
+          setImportResultOpen(false);
+          setImportResult(null);
+          setPersonManageOpen(true);
+        }}
+        onDone={async () => {
+          await refreshPlanFromBackend();
+          setImportResultOpen(false);
+          setImportResult(null);
+        }}
+      />
     </>
   );
 }
