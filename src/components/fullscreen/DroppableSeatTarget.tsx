@@ -26,8 +26,8 @@ export function DroppableSeatTarget(props: {
     <div
       ref={setNodeRef}
       className={[
-        "min-h-[2.5rem] rounded-none p-0 transition-colors",
-        props.occupied ? "" : "flex min-h-[3rem] items-end justify-center pb-0.5",
+        "pointer-events-auto rounded-none p-0 transition-colors",
+        props.occupied ? "min-h-0" : "flex min-h-[44px] items-center justify-center",
         base,
       ].join(" ")}
     >

@@ -1,3 +1,4 @@
+import { normalizeLayoutSnapshot } from "@/fullscreen/normalizeLayoutSnapshot";
 import type { LayoutSnapshot } from "@/fullscreen/types";
 import * as layoutsApi from "@/api/layouts";
 
@@ -14,10 +15,10 @@ export async function saveLayoutSnapshot(snapshot: LayoutSnapshot): Promise<void
 
 function normalizeSnapshot(raw: LayoutSnapshot | null | undefined): LayoutSnapshot | null {
   if (!raw || !Array.isArray(raw.tables)) return null;
-  return {
+  return normalizeLayoutSnapshot({
     tables: raw.tables,
     people: Array.isArray(raw.people) ? raw.people : [],
-  };
+  });
 }
 
 export async function loadLayoutSnapshot(): Promise<LayoutSnapshot | null> {

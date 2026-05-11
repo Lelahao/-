@@ -23,11 +23,18 @@ export function DraggableSeatLabel(props: {
     } satisfies SeatDragData,
   });
 
-  const compactCls =
-    "inline-flex min-h-[32px] w-fit max-w-[120px] cursor-grab select-none items-center justify-center px-0 py-1 text-sm font-semibold text-slate-900 transition active:cursor-grabbing";
+  const dragChrome =
+    "rounded-md border border-dashed border-slate-400/85 bg-slate-50/90 px-3 py-2 font-normal shadow-sm";
 
-  const comfortableCls =
-    "inline-flex min-h-[32px] w-fit max-w-[min(100%,11rem)] cursor-grab select-none items-center justify-center px-0 py-1 text-center text-sm font-semibold leading-snug text-slate-900 transition active:cursor-grabbing whitespace-normal break-words";
+  const compactCls = [
+    "inline-flex min-h-[40px] min-w-[44px] w-fit max-w-[120px] cursor-grab select-none items-center justify-center text-sm text-slate-900 transition active:cursor-grabbing",
+    dragChrome,
+  ].join(" ");
+
+  const comfortableCls = [
+    "inline-flex min-h-[44px] min-w-[48px] w-fit max-w-[min(100%,11rem)] cursor-grab select-none items-center justify-center text-center text-sm leading-snug text-slate-900 transition active:cursor-grabbing whitespace-normal break-words",
+    dragChrome,
+  ].join(" ");
 
   const highlightCls = props.searchHighlight ? " rounded-md ring-2 ring-amber-400 ring-offset-1 bg-amber-50" : "";
 

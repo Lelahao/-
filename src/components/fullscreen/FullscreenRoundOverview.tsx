@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type DragEvent } from "react";
+import { flushSync } from "react-dom";
 import {
   DndContext,
   DragOverlay,
@@ -22,6 +23,7 @@ import { BulkImportPeopleModal } from "@/components/round/BulkImportPeopleModal"
 import { ImportResultModal } from "@/components/round/ImportResultModal";
 import { buildSeedLayout } from "@/fullscreen/seedLayout";
 import { movePersonToSeat, unassignPerson } from "@/fullscreen/layoutOps";
+import { normalizeLayoutSnapshot, isReservedPlaceholderPersonName } from "@/fullscreen/normalizeLayoutSnapshot";
 import { loadLayoutSnapshot, saveLayoutSnapshot } from "@/fullscreen/roundStorage";
 import type { LayoutSnapshot, PersonRecord, SeatDragData, TableDefinition } from "@/fullscreen/types";
 import { layoutToRoundPlan, planDetailToLayoutSnapshot, roundPlanToLayout } from "@/lib/layoutBridge";
@@ -65,6 +67,9 @@ function parseSeatTarget(overId: string): { tableId: string; seatNo: number } | 
 const FS_COLS_STORAGE = "paizuo-fullscreen-cols-per-row";
 const FS_ZOOM_STORAGE = "paizuo-fullscreen-visual-scale";
 
+/** 圆桌视图缩放上限（与顶栏 ± 一致） */
+const FS_VISUAL_SCALE_MAX = 2;
+
 function readFullscreenCols(): number {
   try {
     const raw = localStorage.getItem(FS_COLS_STORAGE);
@@ -80,7 +85,7 @@ function readVisualScale(): number {
   try {
     const raw = localStorage.getItem(FS_ZOOM_STORAGE);
     const z = raw ? parseFloat(raw) : NaN;
-    if (Number.isFinite(z) && z >= 0.75 && z <= 1.35) return Math.round(z * 100) / 100;
+    if (Number.isFinite(z) && z >= 0.75 && z <= FS_VISUAL_SCALE_MAX) return Math.round(z * 100) / 100;
   } catch {
     /* ignore */
   }
@@ -90,10 +95,10 @@ function readVisualScale(): number {
 export function FullscreenRoundOverview() {
   const navigate = useNavigate();
   const location = useLocation();
-  const seed = useMemo(() => buildSeedLayout(), []);
+  const initialSnap = useMemo(() => normalizeLayoutSnapshot(buildSeedLayout()), []);
 
-  const [people, setPeople] = useState<PersonRecord[]>(() => seed.people);
-  const [tables, setTables] = useState<TableDefinition[]>(() => seed.tables);
+  const [people, setPeople] = useState<PersonRecord[]>(() => initialSnap.people);
+  const [tables, setTables] = useState<TableDefinition[]>(() => initialSnap.tables);
   const [colsPerRow, setColsPerRow] = useState<number>(() => readFullscreenCols());
   const [visualScale, setVisualScale] = useState(readVisualScale);
   const [activeDrag, setActiveDrag] = useState<SeatDragData | null>(null);
@@ -123,7 +128,7 @@ export function FullscreenRoundOverview() {
     const pid = plan.planId;
     if (!isLinkableBackendPlanId(pid)) return;
     const detail = await getPlanDetail(pid);
-    const layout = planDetailToLayoutSnapshot(detail);
+    const layout = normalizeLayoutSnapshot(planDetailToLayoutSnapshot(detail));
     setPeople(layout.people);
     setTables(layout.tables);
     setPlan(layoutToRoundPlan(layout, pid));
@@ -138,8 +143,9 @@ export function FullscreenRoundOverview() {
     let cancelled = false;
     const apply = (snap: LayoutSnapshot) => {
       if (cancelled) return;
-      setPeople(snap.people);
-      setTables(snap.tables);
+      const n = normalizeLayoutSnapshot(snap);
+      setPeople(n.people);
+      setTables(n.tables);
     };
 
     (async () => {
@@ -168,7 +174,11 @@ export function FullscreenRoundOverview() {
   );
 
   const unassigned = useMemo(
-    () => people.filter((p) => !p.assignedTableId || p.assignedSeatNo == null),
+    () =>
+      people.filter(
+        (p) =>
+          (!p.assignedTableId || p.assignedSeatNo == null) && !isReservedPlaceholderPersonName(p.name),
+      ),
     [people],
   );
 
@@ -217,7 +227,7 @@ export function FullscreenRoundOverview() {
   const adjustVisualScale = (delta: number) => {
     setVisualScale((prev) => {
       const n = Math.round((prev + delta) * 100) / 100;
-      const c = Math.max(0.75, Math.min(1.35, n));
+      const c = Math.max(0.75, Math.min(FS_VISUAL_SCALE_MAX, n));
       try {
         localStorage.setItem(FS_ZOOM_STORAGE, String(c));
       } catch {
@@ -258,10 +268,12 @@ export function FullscreenRoundOverview() {
   );
 
   const onSave = async () => {
-    const snapshot: LayoutSnapshot = { people, tables };
+    const snapshot = normalizeLayoutSnapshot({ people, tables });
+    setPeople(snapshot.people);
     setSaving(true);
     try {
       await saveLayoutSnapshot(snapshot);
+      window.alert("方案布局已保存。");
     } finally {
       setSaving(false);
     }
@@ -296,7 +308,7 @@ export function FullscreenRoundOverview() {
     if (!orderSource || orderSource === targetTableId) return;
     setTables((prevTables) => {
       const nextTables = reorderTablesList(prevTables, orderSource, targetTableId);
-      void saveLayoutSnapshot({ people, tables: nextTables });
+      void saveLayoutSnapshot(normalizeLayoutSnapshot({ people, tables: nextTables }));
       return nextTables;
     });
   };
@@ -479,7 +491,7 @@ export function FullscreenRoundOverview() {
 
         <DragOverlay dropAnimation={null}>
           {activeDrag ? (
-            <div className="px-1 py-0.5 text-sm font-semibold text-slate-900 drop-shadow-[0_1px_2px_rgb(15_23_42_/_0.25)]">
+            <div className="rounded-md border border-dashed border-slate-400/85 bg-slate-50/90 px-3 py-2 text-sm font-normal text-slate-900 shadow-sm min-h-[44px] min-w-[48px] inline-flex items-center justify-center">
               {activeDrag.personName}
             </div>
           ) : null}
@@ -500,9 +512,15 @@ export function FullscreenRoundOverview() {
         planId={plan.planId}
         planDisplayName={fullscreenPlanName}
         onImportComplete={async (res) => {
-          await refreshPlanFromBackend();
-          setImportResult(res);
-          setImportResultOpen(true);
+          flushSync(() => {
+            setImportResult(res);
+            setImportResultOpen(true);
+          });
+          try {
+            await refreshPlanFromBackend();
+          } catch {
+            /* 列表刷新失败不阻断导入结果展示 */
+          }
         }}
       />
 

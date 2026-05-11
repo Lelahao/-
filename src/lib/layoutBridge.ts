@@ -1,4 +1,5 @@
 import { loadLayoutSnapshot } from "@/fullscreen/roundStorage";
+import { normalizeLayoutSnapshot } from "@/fullscreen/normalizeLayoutSnapshot";
 import type { LayoutSnapshot, PersonRecord, TableDefinition } from "@/fullscreen/types";
 import type { PlanDetail } from "@/lib/dbTypes";
 import type { RoundPlanSnapshot } from "@/lib/roundSeatEngine";
@@ -38,13 +39,13 @@ export function planDetailToLayoutSnapshot(detail: PlanDetail): LayoutSnapshot {
     };
   });
 
-  return { people, tables };
+  return normalizeLayoutSnapshot({ people, tables });
 }
 
 export async function resolveLayoutForExport(getPlan: () => RoundPlanSnapshot): Promise<LayoutSnapshot> {
   const saved = await loadLayoutSnapshot();
   const plan = getPlan();
-  if (plan.planId === "demo-overview" && saved?.people?.length) return saved;
+  if (plan.planId === "demo-overview" && saved?.people?.length) return normalizeLayoutSnapshot(saved);
   return roundPlanToLayout(plan);
 }
 
@@ -101,5 +102,5 @@ export function roundPlanToLayout(plan: RoundPlanSnapshot): LayoutSnapshot {
     };
   });
 
-  return { people, tables };
+  return normalizeLayoutSnapshot({ people, tables });
 }

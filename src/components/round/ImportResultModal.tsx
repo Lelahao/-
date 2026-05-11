@@ -1,4 +1,5 @@
 import * as XLSX from "xlsx";
+import { createPortal } from "react-dom";
 import type { PeopleImportFailureRow, PeopleImportResult } from "@/api/plans";
 
 const FAILURE_DETAIL_FILENAME = "人员导入失败明细.xlsx";
@@ -30,8 +31,10 @@ export function ImportResultModal(props: ImportResultModalProps) {
 
   if (!open || !result) return null;
 
-  const x = result.successCount;
-  const y = result.failureCount;
+  const success = Array.isArray(result.success) ? result.success : [];
+  const failures = Array.isArray(result.failures) ? result.failures : [];
+  const x = typeof result.successCount === "number" ? result.successCount : success.length;
+  const y = typeof result.failureCount === "number" ? result.failureCount : failures.length;
 
   const topLine =
     x > 0 && y > 0
@@ -40,9 +43,9 @@ export function ImportResultModal(props: ImportResultModalProps) {
         ? `Excel 导入完成，成功新增 ${x} 人`
         : `Excel 导入失败，请检查模板格式`;
 
-  return (
+  return createPortal(
     <div
-      className="fixed inset-0 z-[125] flex items-center justify-center bg-slate-900/40 p-4"
+      className="fixed inset-0 z-[135] flex items-center justify-center bg-slate-900/40 p-4"
       role="presentation"
       onClick={onClose}
     >
@@ -85,7 +88,7 @@ export function ImportResultModal(props: ImportResultModalProps) {
                     </tr>
                   </thead>
                   <tbody>
-                    {result.success.map((s) => (
+                    {success.map((s) => (
                       <tr key={s.id} className="border-b border-slate-100 last:border-b-0">
                         <td className="px-3 py-2 font-medium text-slate-900">{s.name}</td>
                         <td className="px-3 py-2 text-slate-700">{s.region}</td>
@@ -105,7 +108,7 @@ export function ImportResultModal(props: ImportResultModalProps) {
                 <h3 className="text-sm font-semibold text-slate-900">失败记录（{y}人）</h3>
                 <button
                   type="button"
-                  onClick={() => downloadFailureDetailXlsx(result.failures)}
+                  onClick={() => downloadFailureDetailXlsx(failures)}
                   className="inline-flex items-center rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50"
                 >
                   下载失败明细
@@ -120,7 +123,7 @@ export function ImportResultModal(props: ImportResultModalProps) {
                     </tr>
                   </thead>
                   <tbody>
-                    {result.failures.map((f, i) => (
+                    {failures.map((f, i) => (
                       <tr key={`${f.row}-${i}`} className="border-b border-slate-100 last:border-b-0">
                         <td className="px-3 py-2 font-medium text-slate-900">{f.name || "—"}</td>
                         <td className="px-3 py-2 text-slate-600">{f.reason}</td>
@@ -160,6 +163,7 @@ export function ImportResultModal(props: ImportResultModalProps) {
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

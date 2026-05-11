@@ -4,6 +4,19 @@ import { getSeatRoleLabel, resolveTableCategoryLabel } from "@/config/seatRoleTe
 /** 与总览 / 全屏文案对齐的默认方案名（LayoutSnapshot 无独立字段时可兜底） */
 export const DEFAULT_EXPORT_PLAN_NAME = "2026 春季接待 · 锦绣厅";
 
+const ROUND_LINKED_PLAN_NAME_STORAGE = "paizuo-round-linked-plan-name";
+
+/** 导出文件名与文档标题：优先使用方案管理进入总览时写入的展示名 */
+export function getExportPlanDisplayName(): string {
+  try {
+    const n = localStorage.getItem(ROUND_LINKED_PLAN_NAME_STORAGE);
+    if (n?.trim()) return n.trim();
+  } catch {
+    /* ignore */
+  }
+  return DEFAULT_EXPORT_PLAN_NAME;
+}
+
 export type ExportSeat = {
   seatNo: number;
   roleLabel: string | null;

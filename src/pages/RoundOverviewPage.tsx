@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type DragEvent } from "react";
+import { flushSync } from "react-dom";
 import { useLocation, useNavigate } from "react-router-dom";
 import { getPlanDetail, type PeopleImportResult } from "@/api/plans";
 import { RoundTableCard } from "@/components/RoundTableCard";
@@ -9,6 +10,7 @@ import { AddPersonModal, type AddPersonEditTarget } from "@/components/round/Add
 import { PersonManageModal } from "@/components/round/PersonManageModal";
 import { BulkImportPeopleModal } from "@/components/round/BulkImportPeopleModal";
 import { ImportResultModal } from "@/components/round/ImportResultModal";
+import { isReservedPlaceholderPersonName } from "@/fullscreen/normalizeLayoutSnapshot";
 import { loadLayoutSnapshot, saveLayoutSnapshot } from "@/fullscreen/roundStorage";
 import { buildRoundOverviewTableRows } from "@/lib/buildRoundOverviewTableRows";
 import { DEFAULT_EXPORT_PLAN_NAME } from "@/features/export/exportScene";
@@ -19,12 +21,18 @@ import { getSeatRoleLabel } from "@/config/seatRoleTemplates";
 import { useRoundPlanDemoStore } from "@/stores/roundPlanDemoStore";
 import { useRoundPersonSearchStore, roundPersonSearchMatches } from "@/stores/roundPersonSearchStore";
 
-const DIST_SEGMENTS = [
-  { n: 6, c: 1 },
-  { n: 9, c: 2 },
-  { n: 10, c: 4 },
-  { n: 13, c: 1 },
-] as const;
+/** 按当前方案真实桌「额定人数」聚合，供「人数分布」展示（与桌卡一致） */
+function capacityDistributionSegments(tables: { capacity: number }[]): { n: number; c: number }[] {
+  const m = new Map<number, number>();
+  for (const t of tables) {
+    const cap = Math.round(Number(t.capacity));
+    if (!Number.isFinite(cap) || cap < 1) continue;
+    m.set(cap, (m.get(cap) ?? 0) + 1);
+  }
+  return [...m.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([n, c]) => ({ n, c }));
+}
 
 const COLS_STORAGE = "paizuo-overview-cols-per-row";
 
@@ -186,9 +194,11 @@ export function RoundOverviewPage() {
 
   const tableRows = useMemo(() => buildRoundOverviewTableRows(plan), [plan]);
 
+  const capacityDistSegments = useMemo(() => capacityDistributionSegments(plan.tables), [plan.tables]);
+
   const unassigned = useMemo(() => {
     const seated = new Set(plan.seats.filter((s) => s.personId).map((s) => s.personId as string));
-    return plan.people.filter((p) => !seated.has(p.id));
+    return plan.people.filter((p) => !seated.has(p.id) && !isReservedPlaceholderPersonName(p.name));
   }, [plan]);
 
   const unassignedCount = unassigned.length;
@@ -233,6 +243,7 @@ export function RoundOverviewPage() {
       const t = plan.tables.find((x) => x.id === seat.tableId);
       if (!t || seat.seatNo < 1 || seat.seatNo > t.capacity) continue;
       const p = plan.people.find((x) => x.id === seat.personId);
+      if (p && isReservedPlaceholderPersonName(p.name)) continue;
       const role = getSeatRoleLabel(t.capacity, seat.seatNo);
       rows.push({
         key: `${seat.tableId}:${seat.seatNo}:${seat.personId}`,
@@ -532,14 +543,18 @@ export function RoundOverviewPage() {
             <div className="min-w-0 flex-1 border-t border-slate-100 pt-4 sm:border-l sm:border-t-0 sm:pl-10 sm:pt-0">
               <div className="text-xs font-medium text-slate-500">人数分布</div>
               <ul className="mt-2 flex flex-wrap gap-x-8 gap-y-2 text-sm text-slate-700">
-                {DIST_SEGMENTS.map((s) => (
+                {capacityDistSegments.length ? (
+                  capacityDistSegments.map((s) => (
                   <li key={`${s.n}-${s.c}`} className="flex items-center gap-2">
                     <span className="h-2 w-2 shrink-0 rounded-full bg-orange-500" aria-hidden />
                     <span className="font-medium text-slate-900">
                       {s.n}人桌 × {s.c}
                     </span>
                   </li>
-                ))}
+                  ))
+                ) : (
+                  <li className="text-sm text-slate-500">暂无桌台数据</li>
+                )}
               </ul>
             </div>
           </div>
@@ -686,9 +701,15 @@ export function RoundOverviewPage() {
         planId={plan.planId}
         planDisplayName={overviewPlanName}
         onImportComplete={async (res) => {
-          await refreshPlanFromBackend();
-          setImportResult(res);
-          setImportResultOpen(true);
+          flushSync(() => {
+            setImportResult(res);
+            setImportResultOpen(true);
+          });
+          try {
+            await refreshPlanFromBackend();
+          } catch {
+            /* 列表刷新失败不阻断导入结果展示 */
+          }
         }}
       />
 

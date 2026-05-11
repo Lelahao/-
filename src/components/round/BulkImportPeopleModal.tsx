@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ChangeEvent, type DragEvent } from "react";
+import { createPortal } from "react-dom";
 import * as XLSX from "xlsx";
 import { ApiError } from "@/api/client";
 import { importPeople } from "@/api/plans";
@@ -117,13 +118,25 @@ export function BulkImportPeopleModal(props: BulkImportPeopleModalProps) {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [busy, setBusy] = useState(false);
+  /** 可见提示（Electron 下 alert 易被忽略时仍能看到进度/错误） */
+  const [feedback, setFeedback] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      setBusy(false);
+      return;
+    }
     setSelectedFile(null);
     setDragOver(false);
+    setFeedback(null);
+    setBusy(false);
   }, [open]);
+
+  const requestClose = useCallback(() => {
+    setBusy(false);
+    onClose();
+  }, [onClose]);
 
   const pickFile = useCallback(() => {
     inputRef.current?.click();
@@ -132,6 +145,7 @@ export function BulkImportPeopleModal(props: BulkImportPeopleModalProps) {
   const applySingleFile = useCallback((file: File | undefined) => {
     if (!file) return;
     if (!file.name.toLowerCase().endsWith(".xlsx")) {
+      setFeedback("仅支持 .xlsx 格式文件");
       window.alert("仅支持 .xlsx 格式文件");
       return;
     }
@@ -156,40 +170,63 @@ export function BulkImportPeopleModal(props: BulkImportPeopleModalProps) {
   };
 
   const onImportSubmit = () => {
+    const linkable = isLinkableBackendPlanId(planId);
+    if (busy) {
+      return;
+    }
     if (!selectedFile) {
+      setFeedback("请先选择 Excel 文件");
       window.alert("请先选择 Excel 文件");
       return;
     }
-    if (!isLinkableBackendPlanId(planId)) {
+    if (!linkable) {
+      setFeedback("当前方案无法关联后端，请从方案管理进入真实方案后再导入。");
       window.alert("请先通过方案管理选择并进入已关联的后端方案，再批量导入人员。");
       return;
     }
+    setBusy(true);
+    setFeedback("正在校验 Excel…");
     void (async () => {
       const v = await validatePeopleImportFile(selectedFile);
       if (!v.ok) {
+        setFeedback(v.message);
         window.alert(v.message);
+        setBusy(false);
         return;
       }
-      setBusy(true);
+      setFeedback("正在上传并导入，请稍候…");
+      let res: PeopleImportResult | null = null;
       try {
-        const res = await importPeople(planId, selectedFile);
-        await Promise.resolve(onImportComplete(res));
-        onClose();
+        res = await importPeople(planId, selectedFile);
       } catch (err) {
-        window.alert(err instanceof ApiError ? err.message : "导入失败，请重试");
-      } finally {
+        const msg = err instanceof ApiError ? err.message : "导入失败，请重试";
+        setFeedback(msg);
+        window.alert(msg);
         setBusy(false);
+        return;
+      }
+      setBusy(false);
+      setFeedback(null);
+      requestClose();
+      if (res) {
+        try {
+          await Promise.resolve(onImportComplete(res));
+        } catch {
+          window.alert("导入已完成，但刷新总览失败，请手动刷新页面。");
+        }
       }
     })();
   };
 
   if (!open) return null;
 
-  return (
+  return createPortal(
     <div
-      className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/40 p-4"
+      className="fixed inset-0 z-[130] flex items-center justify-center bg-slate-900/40 p-4"
       role="presentation"
-      onClick={onClose}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) requestClose();
+      }}
     >
       <input
         ref={inputRef}
@@ -215,11 +252,17 @@ export function BulkImportPeopleModal(props: BulkImportPeopleModalProps) {
             type="button"
             className="shrink-0 rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-800"
             aria-label="关闭"
-            onClick={onClose}
+            onClick={requestClose}
           >
             ✕
           </button>
         </div>
+
+        {feedback || busy ? (
+          <div className="shrink-0 border-b border-amber-200/90 bg-amber-50 px-5 py-2 text-sm text-amber-950" role="status">
+            {feedback ?? "处理中，请稍候…"}
+          </div>
+        ) : null}
 
         <div className="flex shrink-0 flex-wrap gap-2 border-b border-slate-100 px-5 py-3">
           <button
@@ -324,12 +367,17 @@ export function BulkImportPeopleModal(props: BulkImportPeopleModalProps) {
         </div>
 
         <div className="shrink-0 space-y-3 border-t border-slate-200/80 px-5 py-4">
+          {feedback ? (
+            <p className="text-sm font-medium text-amber-900" role="status">
+              {feedback}
+            </p>
+          ) : null}
           <p className="text-xs text-slate-500">导入后人员将进入未安排名单中，可在人员管理中继续编辑。</p>
           <div className="flex justify-end gap-2">
             <button
               type="button"
               disabled={busy}
-              onClick={onClose}
+              onClick={requestClose}
               className="rounded-lg border border-slate-200/90 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-60"
             >
               取消
@@ -345,6 +393,7 @@ export function BulkImportPeopleModal(props: BulkImportPeopleModalProps) {
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

@@ -4,12 +4,23 @@ import { DraggableSeatLabel } from "@/components/fullscreen/DraggableSeatLabel";
 import { DroppableSeatTarget } from "@/components/fullscreen/DroppableSeatTarget";
 import { RoundTableVisual } from "@/components/round/RoundTableVisual";
 import { resolveTableCategoryLabel } from "@/config/seatRoleTemplates";
+import { FS_FULLSCREEN_OUTER_CAP } from "@/fullscreen/fullscreenVisualCaps";
+import { isReservedPlaceholderPersonName } from "@/fullscreen/normalizeLayoutSnapshot";
 
 const cardShell =
   "rounded-2xl border border-slate-200/90 bg-white shadow-[0_1px_2px_rgb(15_23_42_/_0.06),0_10px_30px_rgb(15_23_42_/_0.06)]";
 
+const FS_BASE_BOX_CAP = 560;
+const FS_BASE_BOX_MIN = 220;
+
+function fractionOfWrapWidthForBaseBox(w: number): number {
+  return Math.round(Math.max(FS_BASE_BOX_MIN, Math.min(FS_BASE_BOX_CAP, w * 0.42)));
+}
+
 function personAtSeat(people: PersonRecord[], tableId: string, seatNo: number) {
-  return people.find((p) => p.assignedTableId === tableId && p.assignedSeatNo === seatNo);
+  const p = people.find((x) => x.assignedTableId === tableId && x.assignedSeatNo === seatNo);
+  if (!p || isReservedPlaceholderPersonName(p.name)) return undefined;
+  return p;
 }
 
 export function FullscreenTableCard(props: {
@@ -52,15 +63,15 @@ export function FullscreenTableCard(props: {
     const ro = new ResizeObserver((entries) => {
       const cr = entries[0]?.contentRect;
       if (!cr?.width) return;
-      const next = Math.round(Math.max(220, Math.min(380, cr.width * 0.96)));
-      setBaseBox(next);
+      setBaseBox(fractionOfWrapWidthForBaseBox(cr.width));
     });
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
 
-  const fullscreenBoxPx = Math.round(
-    Math.max(200, Math.min(430, baseBox * Math.max(0.75, Math.min(1.35, visualScale)))),
+  const layoutBoxPx = Math.round(Math.max(200, Math.min(FS_FULLSCREEN_OUTER_CAP, baseBox)));
+  const diagramBoxPx = Math.round(
+    Math.max(200, Math.min(FS_FULLSCREEN_OUTER_CAP, baseBox * Math.max(0.75, Math.min(2, visualScale)))),
   );
 
   const seatOccupied = Array.from({ length: table.capacity }, (_, i) => {
@@ -114,57 +125,62 @@ export function FullscreenTableCard(props: {
       </div>
 
       <div ref={visualWrapRef} className="mt-1 w-full min-w-0">
-        <RoundTableVisual
-          mode="fullscreen"
-          tableNo={table.no}
-          tableKind={tableKind}
-          capacity={table.capacity}
-          seatOccupied={seatOccupied}
-          seatNames={seatNames}
-          fullscreenBoxPx={fullscreenBoxPx}
-          personSearchQuery={personSearchQuery}
-          renderSeat={({ seatNo, roleLabel, searchMatch }) => {
-            const person = personAtSeat(people, table.id, seatNo);
-            const labelText = roleLabel ?? String(seatNo);
-            const labelTitle =
-              roleLabel && person
-                ? `${roleLabel} · ${person.name}`
-                : person
-                  ? person.name
-                  : roleLabel
-                    ? `${roleLabel}`
-                    : `${seatNo}号`;
-
-            return (
-              <div className="flex min-h-[48px] flex-col items-center justify-end gap-0.5">
-                <span
-                  className={`max-w-[5.5rem] cursor-default truncate text-center text-[10px] font-medium ${
-                    roleLabel ? "text-slate-600" : "text-slate-400"
-                  }`}
-                  title={labelTitle}
-                >
-                  {labelText}
-                </span>
-                <DroppableSeatTarget tableId={table.id} seatNo={seatNo} occupied={Boolean(person)}>
-                  {person ? (
-                    <DraggableSeatLabel
-                      personId={person.id}
-                      personName={person.name}
-                      sourceTableId={table.id}
-                      sourceSeatNo={seatNo}
-                      density="comfortable"
-                      searchHighlight={Boolean(searchMatch)}
-                    />
-                  ) : (
-                    <div className="flex min-h-[44px] flex-col items-center justify-center gap-0.5 px-1 py-1 text-center">
-                      <span className="text-[11px] font-medium text-slate-500">空位</span>
-                    </div>
-                  )}
-                </DroppableSeatTarget>
-              </div>
-            );
+        <div
+          className="relative mx-auto overflow-visible"
+          style={{
+            width: layoutBoxPx,
+            height: layoutBoxPx,
+            maxWidth: "100%",
           }}
-        />
+        >
+          <div
+            className="absolute left-1/2 top-1/2"
+            style={{
+              width: diagramBoxPx,
+              height: diagramBoxPx,
+              transform: "translate(-50%, -50%)",
+            }}
+          >
+            <RoundTableVisual
+              mode="fullscreen"
+              tableNo={table.no}
+              tableKind={tableKind}
+              capacity={table.capacity}
+              seatOccupied={seatOccupied}
+              seatNames={seatNames}
+              fullscreenBoxPx={diagramBoxPx}
+              personSearchQuery={personSearchQuery}
+              renderSeat={({ seatNo, searchMatch }) => {
+                const person = personAtSeat(people, table.id, seatNo);
+                const labelTitle = person ? `${seatNo}号 · ${person.name}` : `${seatNo}号`;
+
+                return (
+                  <div className="flex justify-center">
+                    <DroppableSeatTarget tableId={table.id} seatNo={seatNo} occupied={Boolean(person)}>
+                      {person ? (
+                        <DraggableSeatLabel
+                          personId={person.id}
+                          personName={person.name}
+                          sourceTableId={table.id}
+                          sourceSeatNo={seatNo}
+                          density="comfortable"
+                          searchHighlight={Boolean(searchMatch)}
+                        />
+                      ) : (
+                        <div
+                          className="flex min-h-[44px] min-w-[48px] items-center justify-center px-2 py-1 text-center"
+                          title={labelTitle}
+                        >
+                          <span className="text-[11px] font-medium text-slate-500">空位</span>
+                        </div>
+                      )}
+                    </DroppableSeatTarget>
+                  </div>
+                );
+              }}
+            />
+          </div>
+        </div>
       </div>
     </section>
   );

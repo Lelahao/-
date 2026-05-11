@@ -146,7 +146,7 @@ export function AddPersonModal(props: AddPersonModalProps) {
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="请输入姓名"
-              autoComplete="off"
+              autoComplete="name"
               className="mt-1.5 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-200"
             />
           </label>
@@ -161,7 +161,7 @@ export function AddPersonModal(props: AddPersonModalProps) {
               onChange={(e) => setRegion(e.target.value)}
               placeholder="请选择区域"
               list={regionListDomId}
-              autoComplete="off"
+              autoComplete="address-level1"
               className="mt-1.5 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-200"
             />
             <datalist id={regionListDomId}>
@@ -180,7 +180,7 @@ export function AddPersonModal(props: AddPersonModalProps) {
               value={position}
               onChange={(e) => setPosition(e.target.value)}
               placeholder="请输入岗位"
-              autoComplete="off"
+              autoComplete="organization-title"
               className="mt-1.5 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-200"
             />
           </label>
@@ -194,7 +194,7 @@ export function AddPersonModal(props: AddPersonModalProps) {
               value={role}
               onChange={(e) => setRole(e.target.value)}
               placeholder="请输入角色"
-              autoComplete="off"
+              autoComplete="nickname"
               className="mt-1.5 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-200"
             />
             <p className="mt-1 text-xs text-slate-500">角色为自定义输入</p>

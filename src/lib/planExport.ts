@@ -19,7 +19,7 @@ import type { ExportScene } from "@/features/export/exportScene";
 import {
   buildExportSceneFromLayout,
   buildVersionExportScene,
-  DEFAULT_EXPORT_PLAN_NAME,
+  getExportPlanDisplayName,
   sanitizePlanFileBase,
   versionOverviewExportFileBase,
 } from "@/features/export/exportScene";
@@ -153,7 +153,7 @@ export function exportLayoutJson(layout: LayoutSnapshot): void {
  * 总览图与 `renderOverviewPng` / PNG 下载一致。
  */
 export async function exportLayoutExcel(layout: LayoutSnapshot): Promise<void> {
-  const scene = buildExportSceneFromLayout(layout, DEFAULT_EXPORT_PLAN_NAME);
+  const scene = buildExportSceneFromLayout(layout, getExportPlanDisplayName());
   await exportSceneExcel(scene);
 }
 
@@ -253,7 +253,7 @@ export async function exportSceneWord(scene: ExportScene, fileBase?: string): Pr
 }
 
 export async function exportLayoutWord(layout: LayoutSnapshot): Promise<void> {
-  const scene = buildExportSceneFromLayout(layout, DEFAULT_EXPORT_PLAN_NAME);
+  const scene = buildExportSceneFromLayout(layout, getExportPlanDisplayName());
   await exportSceneWord(scene);
 }
 
@@ -391,7 +391,7 @@ export async function exportScenePpt(scene: ExportScene, fileBase?: string): Pro
 }
 
 export async function exportLayoutPpt(layout: LayoutSnapshot): Promise<void> {
-  const scene = buildExportSceneFromLayout(layout, DEFAULT_EXPORT_PLAN_NAME);
+  const scene = buildExportSceneFromLayout(layout, getExportPlanDisplayName());
   await exportScenePpt(scene);
 }
 
@@ -450,7 +450,7 @@ function truncate(s: string, max: number) {
 export function exportLayoutSvgFile(layout: LayoutSnapshot): void {
   const svg = buildLayoutSvg(layout);
   const blob = new Blob([svg], { type: "image/svg+xml;charset=utf-8" });
-  downloadBlob(blob, `${exportBasename()}.svg`);
+  downloadBlob(blob, `${sanitizePlanFileBase(getExportPlanDisplayName())}_排座总览.svg`);
 }
 
 function svgToRaster(svg: string, type: "image/png" | "image/jpeg"): Promise<Blob> {
@@ -492,12 +492,12 @@ function svgToRaster(svg: string, type: "image/png" | "image/jpeg"): Promise<Blo
 }
 
 export async function exportLayoutPng(layout: LayoutSnapshot): Promise<void> {
-  const scene = buildExportSceneFromLayout(layout, DEFAULT_EXPORT_PLAN_NAME);
+  const scene = buildExportSceneFromLayout(layout, getExportPlanDisplayName());
   await exportOverviewImage(scene);
 }
 
 export async function exportLayoutJpg(layout: LayoutSnapshot): Promise<void> {
   const svg = buildLayoutSvg(layout);
   const blob = await svgToRaster(svg, "image/jpeg");
-  downloadBlob(blob, `${exportBasename()}.jpg`);
+  downloadBlob(blob, `${sanitizePlanFileBase(getExportPlanDisplayName())}_排座总览.jpg`);
 }
