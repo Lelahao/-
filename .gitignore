@@ -29,3 +29,13 @@ __pycache__/
 *.pkg
 warn-*.txt
 pyi-runtime*
+
+# 调试和测试用的构建产物（仅保留 release-final）
+release-debug/
+release-debug-*/
+release-icon-test-*/
+
+# release-final 中超过 GitHub 100MB 单文件限制的产物
+release-final/win-unpacked/排座助手.exe
+release-final/排座助手-Setup-0.1.0.exe
+release-final/排座助手-Setup-0.1.0.exe.blockmap

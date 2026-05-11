@@ -1,4 +1,4 @@
-import { createBrowserRouter, Navigate } from "react-router-dom";
+import { createHashRouter, Navigate } from "react-router-dom";
 import { AppShell } from "@/components/AppShell";
 import { AboutPage } from "@/pages/AboutPage";
 import { PlansPage } from "@/pages/PlansPage";
@@ -9,7 +9,7 @@ import { RoundTablePage } from "@/pages/RoundTablePage";
 import { SettingsPage } from "@/pages/SettingsPage";
 import { SquarePage } from "@/pages/SquarePage";
 
-export const router = createBrowserRouter([
+export const router = createHashRouter([
   {
     path: "/round/fullscreen",
     element: <RoundFullscreenPage />,

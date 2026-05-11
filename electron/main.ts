@@ -26,7 +26,7 @@ async function createWindow(): Promise<void> {
     },
   });
 
-  const isUnpackaged = !app.isPackaged;
+  const isUnpackaged = !app.isPackaged && process.env.FORCE_PROD !== "1";
   if (isUnpackaged) {
     await mainWindow.loadURL(VITE_DEV_URL);
     mainWindow.webContents.openDevTools({ mode: "detach" });

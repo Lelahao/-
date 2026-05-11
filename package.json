@@ -12,6 +12,7 @@
     "preview": "vite preview",
     "electron:compile": "tsc -p tsconfig.electron.json && node -e \"require('fs').mkdirSync('dist-electron',{recursive:true}); require('fs').writeFileSync('dist-electron/package.json', JSON.stringify({type:'commonjs',private:true}))\"",
     "electron:dev": "npm run electron:compile && concurrently -k -n vite,electron \"npm run dev\" \"wait-on http://127.0.0.1:1420 && cross-env electron .\"",
+    "electron:prod-sim": "cross-env FORCE_PROD=1 electron .",
     "build:backend": "pyinstaller --clean --noconfirm --distpath dist-backend --workpath server/build server/paizuo-backend.spec",
     "build:desktop": "npm run build:frontend && npm run build:backend && npm run electron:compile && cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --win --dir --x64 --publish never",
     "dist:win": "npm run build:frontend && npm run build:backend && npm run electron:compile && cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --win nsis --x64 --publish never"
@@ -38,6 +39,7 @@
     "cross-env": "^7.0.3",
     "electron": "^34.0.0",
     "electron-builder": "^25.1.8",
+    "rcedit": "^5.0.1",
     "tailwindcss": "^4.1.18",
     "typescript": "~5.9.3",
     "vite": "^7.3.1",
@@ -69,11 +71,15 @@
       "signAndEditExecutable": false,
       "artifactName": "${productName}-Setup-${version}.${ext}"
     },
+    "afterPack": "./scripts/embed-win-icon.cjs",
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "perMachine": false,
       "shortcutName": "排座助手",
+      "installerIcon": "icons/icon.ico",
+      "uninstallerIcon": "icons/icon.ico",
+      "installerHeaderIcon": "icons/icon.ico",
       "installerLanguages": [
         "zh_CN",
         "en_US"

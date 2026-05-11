@@ -9,7 +9,7 @@ export function getBackendPort(): number {
 }
 
 export function isDev(): boolean {
-  return !app.isPackaged;
+  return !app.isPackaged && process.env.FORCE_PROD !== "1";
 }
 
 /** Electron userData 根目录。 */
@@ -33,6 +33,9 @@ export function getLogsDir(): string {
 
 /** 打包后 backend exe 应位于 resources（extraResources）。 */
 export function getBackendExePath(): string {
+  if (process.env.FORCE_PROD === "1") {
+    return path.resolve(__dirname, "..", "dist-backend", "paizuo-backend.exe");
+  }
   if (!app.isPackaged) {
     return "";
   }
