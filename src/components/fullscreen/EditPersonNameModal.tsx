@@ -10,8 +10,10 @@ export type EditPersonNameModalProps = {
   initialName: string;
   /** 当前座位描述，例如 "2号桌 · 5号座" */
   seatLabel?: string;
-  /** 保存或删除成功后调用，用于刷新当前界面数据 */
-  onChanged: () => void | Promise<void>;
+  /** 重命名成功后调用，仅更新被改名的那个人，不要触发全量刷新（否则会把本地未同步的座位绑定覆盖掉）。 */
+  onRenamed?: (newName: string) => void | Promise<void>;
+  /** 删除成功后调用，仅移除被删除的那个人，不要触发全量刷新（否则会把本地未同步的座位绑定覆盖掉）。 */
+  onDeleted?: () => void | Promise<void>;
 };
 
 /**
@@ -19,7 +21,7 @@ export type EditPersonNameModalProps = {
  * 同一弹窗提供「删除人员」按钮，删除走二次确认。
  */
 export function EditPersonNameModal(props: EditPersonNameModalProps) {
-  const { open, onClose, planId, personId, initialName, seatLabel, onChanged } = props;
+  const { open, onClose, planId, personId, initialName, seatLabel, onRenamed, onDeleted } = props;
   const [name, setName] = useState(initialName);
   const [busy, setBusy] = useState(false);
 
@@ -42,7 +44,7 @@ export function EditPersonNameModal(props: EditPersonNameModalProps) {
     setBusy(true);
     try {
       await updatePerson(planId, personId, { name: n });
-      await Promise.resolve(onChanged());
+      if (onRenamed) await Promise.resolve(onRenamed(n));
       onClose();
     } catch (e) {
       window.alert(e instanceof ApiError ? e.message : "保存失败，请重试");
@@ -61,7 +63,7 @@ export function EditPersonNameModal(props: EditPersonNameModalProps) {
     setBusy(true);
     try {
       await deletePerson(planId, personId);
-      await Promise.resolve(onChanged());
+      if (onDeleted) await Promise.resolve(onDeleted());
       onClose();
     } catch (e) {
       window.alert(e instanceof ApiError ? e.message : "删除失败，请重试");

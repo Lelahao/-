@@ -658,7 +658,27 @@ export function FullscreenRoundOverview() {
           personId={editPersonTarget.personId}
           initialName={editPersonTarget.name}
           seatLabel={editPersonTarget.seatLabel}
-          onChanged={() => refreshPlanFromBackend(editPersonTarget.planId)}
+          onRenamed={(newName) => {
+            // 外科手术式更新：仅改这一个人的 name，避免 refreshPlanFromBackend
+            // 把本地未同步到 backend 的座位绑定一起覆盖成空座。
+            const target = editPersonTarget;
+            setPeople((prev) => {
+              const next = prev.map((p) =>
+                p.id === target.personId ? { ...p, name: newName } : p,
+              );
+              void saveLayoutSnapshot({ people: next, tables });
+              return next;
+            });
+          }}
+          onDeleted={() => {
+            // 外科手术式更新：仅移除这一个人，其余人员的座位绑定保持不变。
+            const target = editPersonTarget;
+            setPeople((prev) => {
+              const next = prev.filter((p) => p.id !== target.personId);
+              void saveLayoutSnapshot({ people: next, tables });
+              return next;
+            });
+          }}
         />
       ) : null}
 
