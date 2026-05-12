@@ -35,6 +35,7 @@ import { DEFAULT_EXPORT_PLAN_NAME } from "@/features/export/exportScene";
 
 const TABLE_ORDER_MIME = "application/x-paizuo-table-order";
 
+const ROUND_LINKED_PLAN_STORAGE = "paizuo-round-linked-plan-id";
 const ROUND_LINKED_PLAN_NAME_STORAGE = "paizuo-round-linked-plan-name";
 
 function reorderTablesList(prev: TableDefinition[], sourceId: string, targetId: string): TableDefinition[] {
@@ -375,10 +376,33 @@ export function FullscreenRoundOverview() {
             <button type="button" className={btnBase} onClick={onSave} disabled={saving}>
               保存方案
             </button>
-            <button type="button" className={btnBase}>
+            <button
+              type="button"
+              className={btnBase}
+              onClick={() => {
+                let pid: string | null = isLinkableBackendPlanId(plan.planId) ? plan.planId : null;
+                if (!pid) {
+                  try {
+                    const linked = localStorage.getItem(ROUND_LINKED_PLAN_STORAGE);
+                    if (linked && isLinkableBackendPlanId(linked)) pid = linked;
+                  } catch {
+                    /* ignore */
+                  }
+                }
+                if (pid) {
+                  navigate("/plans", { state: { openEditPlanId: pid } });
+                } else {
+                  navigate("/plans", { state: { openRoundManage: true } });
+                }
+              }}
+            >
               桌次管理
             </button>
-            <button type="button" className={btnBase}>
+            <button
+              type="button"
+              className={btnBase}
+              onClick={() => navigate("/round/check")}
+            >
               查看检查
             </button>
             <button

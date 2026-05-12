@@ -286,7 +286,7 @@ function buildTablesSavePayload(
 function defaultNewPlanRows(): NewPlanTableRow[] {
   return [
     newRowDefaults({ categoryPreset: "主桌", kind: "round", tableCount: 1, capacity: 10 }),
-    newRowDefaults({ categoryPreset: "宾客桌", kind: "round", tableCount: 9, capacity: 8 }),
+    newRowDefaults({ categoryPreset: "宾客桌", kind: "round", tableCount: 1, capacity: 8 }),
   ];
 }
 
@@ -1480,7 +1480,6 @@ export function PlansPage() {
       return;
     }
     const tablesPayload = buildTablesPayload(newRows);
-    const peoplePayload = buildPlaceholderPeople(estimatedPeople);
 
     setNewPlanSubmitting(true);
     let planId: string | null = null;
@@ -1488,7 +1487,6 @@ export function PlansPage() {
       const created = await createPlan({ name, note: newNote.trim() || null });
       planId = created.id;
       await saveTables({ planId: created.id, tables: tablesPayload });
-      await putPeople(created.id, peoplePayload);
       setShowNewPlan(false);
       await refreshPlans();
     } catch (e) {
@@ -1767,6 +1765,16 @@ export function PlansPage() {
     setShowRoundManageModal(true);
     navigate("/plans", { replace: true, state: null });
   }, [location.state, navigate]);
+
+  useEffect(() => {
+    const st = location.state as { openEditPlanId?: string } | null;
+    if (!st?.openEditPlanId) return;
+    if (plans.length === 0) return;
+    const target = plans.find((p) => p.id === st.openEditPlanId);
+    if (target) void openEditPlan(target);
+    navigate("/plans", { replace: true, state: null });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.state, plans, navigate]);
 
   useEffect(() => {
     if (!showRoundManageModal) return;
