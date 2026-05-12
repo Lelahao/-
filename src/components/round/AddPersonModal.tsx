@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { ApiError } from "@/api/client";
 import { createPerson, getPlanDetail, updatePerson } from "@/api/plans";
+import type { PersonRow } from "@/lib/dbTypes";
 import { isLinkableBackendPlanId } from "@/lib/roundBackendPlanId";
 
 export type AddPersonEditTarget = {
@@ -11,12 +12,18 @@ export type AddPersonEditTarget = {
   role: string;
 };
 
+export type AddPersonSuccessPayload = {
+  mode: "create" | "edit";
+  /** 后端返回的最新人员数据；调用方可据此做外科手术式本地更新，避免全量刷新覆盖未同步座位。 */
+  person: PersonRow;
+};
+
 export type AddPersonModalProps = {
   open: boolean;
   onClose: () => void;
   planId: string;
   planDisplayName: string;
-  onSuccess: () => void | Promise<void>;
+  onSuccess: (payload?: AddPersonSuccessPayload) => void | Promise<void>;
   /** 传入则为编辑模式（同一表单，提交时 PATCH） */
   editPerson?: AddPersonEditTarget | null;
 };
@@ -89,12 +96,15 @@ export function AddPersonModal(props: AddPersonModalProps) {
     }
     setBusy(true);
     try {
+      let payload: AddPersonSuccessPayload | undefined;
       if (isEdit && editPerson) {
-        await updatePerson(planId, editPerson.id, { name: n, region: reg, position: pos, role: rl });
+        const res = await updatePerson(planId, editPerson.id, { name: n, region: reg, position: pos, role: rl });
+        payload = { mode: "edit", person: res.person };
       } else {
-        await createPerson(planId, { name: n, region: reg, position: pos, role: rl });
+        const res = await createPerson(planId, { name: n, region: reg, position: pos, role: rl });
+        payload = { mode: "create", person: res.person };
       }
-      await Promise.resolve(onSuccess());
+      await Promise.resolve(onSuccess(payload));
       window.alert(isEdit ? "人员信息已保存" : "人员已添加到未安排名单");
       onClose();
     } catch (e) {

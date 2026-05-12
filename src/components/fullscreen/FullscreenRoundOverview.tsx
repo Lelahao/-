@@ -647,7 +647,26 @@ export function FullscreenRoundOverview() {
         onClose={() => setAddPersonOpen(false)}
         planId={plan.planId}
         planDisplayName={fullscreenPlanName}
-        onSuccess={refreshPlanFromBackend}
+        onSuccess={(payload) => {
+          // 外科手术式更新：把新人员追加为"未安排"，避免 refreshPlanFromBackend
+          // 把全屏页本地未同步到 backend 的座位绑定一起覆盖成空座。
+          if (!payload || payload.mode !== "create") return;
+          const created = payload.person;
+          setPeople((prev) => {
+            if (prev.some((p) => p.id === created.id)) return prev;
+            const next = [
+              ...prev,
+              {
+                id: created.id,
+                name: created.displayName,
+                assignedTableId: null as string | null,
+                assignedSeatNo: null as number | null,
+              },
+            ];
+            void saveLayoutSnapshot({ people: next, tables });
+            return next;
+          });
+        }}
       />
 
       {editPersonTarget ? (
