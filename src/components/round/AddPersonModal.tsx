@@ -79,8 +79,8 @@ export function AddPersonModal(props: AddPersonModalProps) {
     const reg = region.trim();
     const pos = position.trim();
     const rl = role.trim();
-    if (!n || !reg || !pos || !rl) {
-      window.alert("请填写姓名、区域、岗位、角色");
+    if (!n) {
+      window.alert("请填写姓名");
       return;
     }
     if (!isLinkableBackendPlanId(planId)) {
@@ -152,9 +152,7 @@ export function AddPersonModal(props: AddPersonModalProps) {
           </label>
 
           <label className="block">
-            <span className="text-sm font-medium text-slate-800">
-              区域 <span className="text-orange-600">*</span>
-            </span>
+            <span className="text-sm font-medium text-slate-800">区域</span>
             <input
               type="text"
               value={region}
@@ -172,9 +170,7 @@ export function AddPersonModal(props: AddPersonModalProps) {
           </label>
 
           <label className="block">
-            <span className="text-sm font-medium text-slate-800">
-              岗位 <span className="text-orange-600">*</span>
-            </span>
+            <span className="text-sm font-medium text-slate-800">岗位</span>
             <input
               type="text"
               value={position}
@@ -186,9 +182,7 @@ export function AddPersonModal(props: AddPersonModalProps) {
           </label>
 
           <label className="block">
-            <span className="text-sm font-medium text-slate-800">
-              角色 <span className="text-orange-600">*</span>
-            </span>
+            <span className="text-sm font-medium text-slate-800">角色</span>
             <input
               type="text"
               value={role}
@@ -204,8 +198,8 @@ export function AddPersonModal(props: AddPersonModalProps) {
         <div className="border-t border-slate-100 px-5 py-3">
           <p className="text-xs text-slate-500">
             {isEdit
-              ? "修改后列表与排座数据将随方案刷新。角色为自定义输入。"
-              : "添加后默认进入未安排人员名单，可拖拽至空座完成排座。角色为自定义输入。"}
+              ? "修改后列表与排座数据将随方案刷新。区域、岗位、角色为选填；角色为自定义输入。"
+              : "添加后默认进入未安排人员名单，可拖拽至空座完成排座。区域、岗位、角色为选填；角色为自定义输入。"}
           </p>
         </div>
 

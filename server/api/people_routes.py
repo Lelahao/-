@@ -23,17 +23,22 @@ class PeopleBatchBody(BaseModel):
 class CreatePersonBody(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
     name: str
-    region: str
-    position: str
-    role: str
+    region: str = ""
+    position: str = ""
+    role: str = ""
 
-    @field_validator("name", "region", "position", "role")
+    @field_validator("name")
     @classmethod
-    def strip_nonempty(cls, v: str) -> str:
+    def name_nonempty(cls, v: str) -> str:
         s = str(v).strip()
         if not s:
             raise ValueError("cannot be empty")
         return s
+
+    @field_validator("region", "position", "role")
+    @classmethod
+    def optional_strip(cls, v: str) -> str:
+        return str(v).strip()
 
 
 class UpdatePersonBody(BaseModel):
@@ -43,15 +48,22 @@ class UpdatePersonBody(BaseModel):
     position: str | None = None
     role: str | None = None
 
-    @field_validator("name", "region", "position", "role")
+    @field_validator("name")
     @classmethod
-    def strip_when_present(cls, v: str | None) -> str | None:
+    def name_strip_nonempty(cls, v: str | None) -> str | None:
         if v is None:
             return None
         s = str(v).strip()
         if not s:
             raise ValueError("cannot be empty")
         return s
+
+    @field_validator("region", "position", "role")
+    @classmethod
+    def optional_strip_when_present(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        return str(v).strip()
 
 
 def _parse_people_xlsx(data: bytes) -> list[tuple[str, str, str, str]]:

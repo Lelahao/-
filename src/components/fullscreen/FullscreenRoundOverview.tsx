@@ -13,6 +13,8 @@ import {
 import { useNavigate, useLocation } from "react-router-dom";
 import { FullscreenTableCard } from "@/components/fullscreen/FullscreenTableCard";
 import { DraggableSeatLabel } from "@/components/fullscreen/DraggableSeatLabel";
+import { EditPersonNameModal } from "@/components/fullscreen/EditPersonNameModal";
+import { EditTableCapacityModal } from "@/components/fullscreen/EditTableCapacityModal";
 import {
   DroppableUnassignedPool,
   UNASSIGNED_POOL_DROP_ID,
@@ -28,7 +30,8 @@ import { loadLayoutSnapshot, saveLayoutSnapshot } from "@/fullscreen/roundStorag
 import type { LayoutSnapshot, PersonRecord, SeatDragData, TableDefinition } from "@/fullscreen/types";
 import { layoutToRoundPlan, planDetailToLayoutSnapshot, roundPlanToLayout } from "@/lib/layoutBridge";
 import { isLinkableBackendPlanId } from "@/lib/roundBackendPlanId";
-import { getPlanDetail, type PeopleImportResult } from "@/api/plans";
+import { getPlanDetail, unassignPerson as unassignPersonApi, type PeopleImportResult } from "@/api/plans";
+import { saveTables } from "@/api/tables";
 import { useRoundPersonSearchStore, roundPersonSearchMatches } from "@/stores/roundPersonSearchStore";
 import { useRoundPlanDemoStore } from "@/stores/roundPlanDemoStore";
 import { DEFAULT_EXPORT_PLAN_NAME } from "@/features/export/exportScene";
@@ -109,6 +112,12 @@ export function FullscreenRoundOverview() {
   const [bulkImportOpen, setBulkImportOpen] = useState(false);
   const [importResultOpen, setImportResultOpen] = useState(false);
   const [importResult, setImportResult] = useState<PeopleImportResult | null>(null);
+  const [editPersonTarget, setEditPersonTarget] = useState<
+    { planId: string; personId: string; name: string; seatLabel: string } | null
+  >(null);
+  const [capacityEditTarget, setCapacityEditTarget] = useState<
+    { planId: string; table: TableDefinition } | null
+  >(null);
 
   const plan = useRoundPlanDemoStore((s) => s.plan);
   const setPlan = useRoundPlanDemoStore((s) => s.setPlan);
@@ -125,8 +134,8 @@ export function FullscreenRoundOverview() {
     return DEFAULT_EXPORT_PLAN_NAME;
   }, [navState, location.key, plan.planId]);
 
-  const refreshPlanFromBackend = async () => {
-    const pid = plan.planId;
+  const refreshPlanFromBackend = async (planIdOverride?: string) => {
+    const pid = planIdOverride ?? plan.planId;
     if (!isLinkableBackendPlanId(pid)) return;
     const detail = await getPlanDetail(pid);
     const layout = normalizeLayoutSnapshot(planDetailToLayoutSnapshot(detail));
@@ -277,6 +286,60 @@ export function FullscreenRoundOverview() {
       window.alert("方案布局已保存。");
     } finally {
       setSaving(false);
+    }
+  };
+
+  /** 编辑某桌 capacity：减容时先确认+逐人 unassignPerson，再全量 saveTables，最后 refresh。 */
+  const submitCapacityChange = async (targetPlanId: string, targetTableId: string, newCap: number) => {
+    const tbl = tables.find((t) => t.id === targetTableId);
+    if (!tbl) throw new Error("未找到目标桌");
+    if (newCap === tbl.capacity) return;
+
+    if (newCap < tbl.capacity) {
+      const overflow = people
+        .filter((p) => p.assignedTableId === targetTableId && (p.assignedSeatNo ?? 0) > newCap)
+        .sort((a, b) => (a.assignedSeatNo ?? 0) - (b.assignedSeatNo ?? 0));
+
+      if (overflow.length > 0) {
+        const seatList = overflow.map((p) => `${p.assignedSeatNo}号`).join("、");
+        const ok = window.confirm(
+          `减少人数后，超出位置（${seatList}）上的人员将被移出座位，但不会从人员管理中删除。是否继续？`,
+        );
+        if (!ok) return;
+        for (const p of overflow) {
+          await unassignPersonApi(targetPlanId, p.id);
+        }
+      }
+    }
+
+    const tablesPayload = tables.map((t) => ({
+      id: t.id,
+      tableNo: t.no,
+      hallName: t.hallName,
+      capacity: t.id === targetTableId ? newCap : t.capacity,
+    }));
+    await saveTables({ planId: targetPlanId, tables: tablesPayload });
+
+    // 全屏页的座位绑定（drag/move/unassign）当前只保存在本地 state + localStorage，
+    // 还未同步到 backend 的 people.assigned_*/seats.person_id。
+    // 因此这里不能调用 refreshPlanFromBackend——backend 会返回"几乎全空"的座位状态，
+    // 把整桌人误覆盖成空座。改为对本地 state 做精确更新：只动 capacity 和超出座位的人员。
+    const nextTables = tables.map((t) =>
+      t.id === targetTableId ? { ...t, capacity: newCap } : t,
+    );
+    const nextPeople = people.map((p) =>
+      p.assignedTableId === targetTableId && (p.assignedSeatNo ?? 0) > newCap
+        ? { ...p, assignedTableId: null, assignedSeatNo: null }
+        : p,
+    );
+    const nextLayout = normalizeLayoutSnapshot({ people: nextPeople, tables: nextTables });
+    setTables(nextLayout.tables);
+    setPeople(nextLayout.people);
+    setPlan(layoutToRoundPlan(nextLayout, targetPlanId));
+    try {
+      await saveLayoutSnapshot(nextLayout);
+    } catch {
+      /* ignore */
     }
   };
 
@@ -479,6 +542,27 @@ export function FullscreenRoundOverview() {
                         sourceSeatNo={0}
                         density="compact"
                         searchHighlight={roundPersonSearchMatches(p.name, personSearchQuery)}
+                        onActivate={() => {
+                          let pid: string | null = isLinkableBackendPlanId(plan.planId) ? plan.planId : null;
+                          if (!pid) {
+                            try {
+                              const linked = localStorage.getItem(ROUND_LINKED_PLAN_STORAGE);
+                              if (linked && isLinkableBackendPlanId(linked)) pid = linked;
+                            } catch {
+                              /* ignore */
+                            }
+                          }
+                          if (!pid) {
+                            window.alert("演示数据下无法编辑人员，请从「方案管理」进入真实方案。");
+                            return;
+                          }
+                          setEditPersonTarget({
+                            planId: pid,
+                            personId: p.id,
+                            name: p.name,
+                            seatLabel: "未安排人员",
+                          });
+                        }}
                       />
                     </div>
                   ))}
@@ -508,6 +592,42 @@ export function FullscreenRoundOverview() {
                 onTableReorderDragOver={onTableReorderDragOver}
                 onTableReorderDragLeave={onTableReorderDragLeave}
                 onTableReorderDrop={onTableReorderDrop}
+                onPersonClick={(person, seatLabel) => {
+                  let pid: string | null = isLinkableBackendPlanId(plan.planId) ? plan.planId : null;
+                  if (!pid) {
+                    try {
+                      const linked = localStorage.getItem(ROUND_LINKED_PLAN_STORAGE);
+                      if (linked && isLinkableBackendPlanId(linked)) pid = linked;
+                    } catch {
+                      /* ignore */
+                    }
+                  }
+                  if (!pid) {
+                    window.alert("演示数据下无法编辑人员，请从「方案管理」进入真实方案。");
+                    return;
+                  }
+                  setEditPersonTarget({
+                    planId: pid,
+                    personId: person.id,
+                    name: person.name,
+                    seatLabel,
+                  });
+                }}
+                onCapacityEdit={(targetTable) => {
+                  let pid: string | null = isLinkableBackendPlanId(plan.planId) ? plan.planId : null;
+                  let lsLinked: string | null = null;
+                  try {
+                    lsLinked = localStorage.getItem(ROUND_LINKED_PLAN_STORAGE);
+                  } catch {
+                    /* ignore */
+                  }
+                  if (!pid && lsLinked && isLinkableBackendPlanId(lsLinked)) pid = lsLinked;
+                  if (!pid) {
+                    window.alert("演示数据下无法修改桌人数，请从「方案管理」进入真实方案。");
+                    return;
+                  }
+                  setCapacityEditTarget({ planId: pid, table: targetTable });
+                }}
               />
             ))}
           </RoundOverviewBoard>
@@ -529,6 +649,29 @@ export function FullscreenRoundOverview() {
         planDisplayName={fullscreenPlanName}
         onSuccess={refreshPlanFromBackend}
       />
+
+      {editPersonTarget ? (
+        <EditPersonNameModal
+          open
+          onClose={() => setEditPersonTarget(null)}
+          planId={editPersonTarget.planId}
+          personId={editPersonTarget.personId}
+          initialName={editPersonTarget.name}
+          seatLabel={editPersonTarget.seatLabel}
+          onChanged={() => refreshPlanFromBackend(editPersonTarget.planId)}
+        />
+      ) : null}
+
+      {capacityEditTarget ? (
+        <EditTableCapacityModal
+          open
+          onClose={() => setCapacityEditTarget(null)}
+          table={capacityEditTarget.table}
+          onSubmit={(newCap) =>
+            submitCapacityChange(capacityEditTarget.planId, capacityEditTarget.table.id, newCap)
+          }
+        />
+      ) : null}
 
       <BulkImportPeopleModal
         open={bulkImportOpen}

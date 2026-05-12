@@ -307,12 +307,6 @@ def import_people_rows(
         rreason: str | None = None
         if not name.strip():
             rreason = "姓名不能为空"
-        elif not region.strip():
-            rreason = "区域不能为空"
-        elif not position.strip():
-            rreason = "岗位不能为空"
-        elif not role.strip():
-            rreason = "角色不能为空"
 
         if rreason:
             failures.append(

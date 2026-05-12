@@ -10,6 +10,8 @@ export function DraggableSeatLabel(props: {
   density?: "compact" | "comfortable";
   /** 总览搜索命中 */
   searchHighlight?: boolean;
+  /** 短点击（移动 < activationConstraint.distance）时触发；与拖拽天然互斥 */
+  onActivate?: () => void;
 }) {
   const density = props.density ?? "comfortable";
 
@@ -45,6 +47,7 @@ export function DraggableSeatLabel(props: {
       {...attributes}
       type="button"
       title={props.personName}
+      onClick={props.onActivate}
       className={[
         density === "compact" ? compactCls : comfortableCls,
         highlightCls,

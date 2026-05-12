@@ -28,7 +28,7 @@ export function downloadPeopleImportTemplateFile(planDisplayName: string) {
     ["填写说明"],
     [""],
     ["1. 请在「人员导入」工作表第 1 行填写表头，请勿修改列名。"],
-    ["2. 姓名、区域、岗位、角色均为必填；自第 2 行起每人一行。"],
+    ["2. 姓名为必填字段；区域、岗位、角色为选填；自第 2 行起每人一行。"],
     ["3. 角色为自定义文本，请勿使用下拉或枚举限制。"],
     ["4. 仅支持 .xlsx 格式；导入为追加，不覆盖、不删除已有人员。"],
   ];
@@ -92,8 +92,8 @@ export async function validatePeopleImportFile(file: File): Promise<ValidatePeop
     const role = String(row[idx["角色"]] ?? "").trim();
     if (!name && !region && !position && !role) continue;
     dataRows++;
-    if (!name || !region || !position || !role) {
-      return { ok: false, message: `第 ${r + 1} 行：姓名、区域、岗位、角色均不能为空` };
+    if (!name) {
+      return { ok: false, message: `第 ${r + 1} 行：姓名不能为空` };
     }
   }
   if (dataRows === 0) {
@@ -321,27 +321,24 @@ export function BulkImportPeopleModal(props: BulkImportPeopleModalProps) {
           </div>
 
           <div className="mt-5 rounded-xl border border-slate-200/90 bg-slate-50/50 px-4 py-3">
-            <div className="text-sm font-semibold text-slate-900">模板说明（必填字段）</div>
+            <div className="text-sm font-semibold text-slate-900">模板说明</div>
             <ul className="mt-3 space-y-2 text-sm text-slate-700">
               <li>
                 <span className="font-medium text-slate-900">姓名</span>{" "}
                 <span className="text-orange-600">*</span>
               </li>
               <li>
-                <span className="font-medium text-slate-900">区域</span>{" "}
-                <span className="text-orange-600">*</span>
+                <span className="font-medium text-slate-900">区域</span>
               </li>
               <li>
-                <span className="font-medium text-slate-900">岗位</span>{" "}
-                <span className="text-orange-600">*</span>
+                <span className="font-medium text-slate-900">岗位</span>
               </li>
               <li>
-                <span className="font-medium text-slate-900">角色</span>{" "}
-                <span className="text-orange-600">*</span>
+                <span className="font-medium text-slate-900">角色</span>
               </li>
             </ul>
             <p className="mt-3 text-xs text-slate-500">
-              请使用系统模板录入人员信息，首行字段不可修改；支持 .xlsx 格式。
+              姓名为必填字段；区域、岗位、角色为选填，角色为自定义输入。首行字段不可修改；支持 .xlsx 格式。
             </p>
             <div className="mt-3 overflow-hidden rounded-lg border border-slate-200 bg-white text-sm">
               <table className="w-full border-collapse text-left">

@@ -38,6 +38,10 @@ export function FullscreenTableCard(props: {
   onTableReorderDragOver?: (e: DragEvent, tableId: string) => void;
   onTableReorderDragLeave?: (e: DragEvent, tableId: string) => void;
   onTableReorderDrop?: (e: DragEvent, tableId: string) => void;
+  /** 点击座位姓名时触发；short-click 不与拖拽冲突（距离阈值由父级 PointerSensor 控制） */
+  onPersonClick?: (person: PersonRecord, seatLabel: string) => void;
+  /** 点击桌卡 header 上的"编辑"以修改本桌 capacity */
+  onCapacityEdit?: (table: TableDefinition) => void;
 }) {
   const {
     table,
@@ -51,6 +55,8 @@ export function FullscreenTableCard(props: {
     onTableReorderDragOver,
     onTableReorderDragLeave,
     onTableReorderDrop,
+    onPersonClick,
+    onCapacityEdit,
   } = props;
   const tableKind = resolveTableCategoryLabel(table);
 
@@ -96,7 +102,7 @@ export function FullscreenTableCard(props: {
       onDragLeave={onTableReorderDragLeave ? (e) => onTableReorderDragLeave(e, table.id) : undefined}
       onDrop={onTableReorderDrop ? (e) => onTableReorderDrop(e, table.id) : undefined}
     >
-      <div className="flex items-start gap-2">
+      <div className="relative z-10 flex items-start gap-2">
         {onTableReorderDragStart ? (
           <span
             draggable
@@ -120,7 +126,21 @@ export function FullscreenTableCard(props: {
           <div className="text-base font-semibold text-slate-900">
             {table.no}号桌 · {table.hallName}
           </div>
-          <div className="mt-1 text-xs text-slate-500">{table.capacity}人桌</div>
+          <div className="mt-1 flex items-center justify-center gap-1 text-xs text-slate-500">
+            <span>{table.capacity}人桌</span>
+            {onCapacityEdit ? (
+              <>
+                <span className="text-slate-300">·</span>
+                <button
+                  type="button"
+                  onClick={() => onCapacityEdit(table)}
+                  className="rounded text-orange-600 hover:text-orange-700 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-300"
+                >
+                  编辑
+                </button>
+              </>
+            ) : null}
+          </div>
         </div>
       </div>
 
@@ -165,6 +185,11 @@ export function FullscreenTableCard(props: {
                           sourceSeatNo={seatNo}
                           density="comfortable"
                           searchHighlight={Boolean(searchMatch)}
+                          onActivate={
+                            onPersonClick
+                              ? () => onPersonClick(person, `${table.no}号桌 · ${seatNo}号座`)
+                              : undefined
+                          }
                         />
                       ) : (
                         <div
