@@ -276,7 +276,6 @@ export function RoundTableVisual(props: RoundTableVisualProps) {
 
         const numPt = polarOffset(CARD_CX, CARD_CY, CARD_NUMBER_R, pos.angle);
         const namePt = polarOffset(CARD_CX, CARD_CY, CARD_NAME_R, pos.angle);
-        const rolePt = polarOffset(CARD_CX, CARD_CY, CARD_ROLE_R, pos.angle);
 
         let numClass = "pointer-events-none fill-slate-900 font-semibold";
         if (seatError?.[i]) numClass = "pointer-events-none fill-red-600 font-semibold";
@@ -308,18 +307,6 @@ export function RoundTableVisual(props: RoundTableVisualProps) {
                 style={{ fontSize: 6.5 }}
               >
                 {shortSeatName(name, 6)}
-              </text>
-            ) : null}
-            {role ? (
-              <text
-                x={rolePt.x}
-                y={rolePt.y}
-                textAnchor="middle"
-                dominantBaseline="middle"
-                className="pointer-events-none fill-slate-500"
-                style={{ fontSize: 7 }}
-              >
-                {role}
               </text>
             ) : null}
           </g>

@@ -121,9 +121,9 @@ export async function exportSceneExcel(scene: ExportScene, fileBase?: string): P
   }
 
   const s3 = wb.addWorksheet("人员座位明细");
-  s3.addRow(["桌号", "座位号", "方位", "姓名", "备注"]);
+  s3.addRow(["桌号", "座位号", "姓名", "备注"]);
   for (const row of scene.seats) {
-    s3.addRow([row.tableNo, row.seatNo, row.roleLabel ?? "", row.personName ?? "", ""]);
+    s3.addRow([row.tableNo, row.seatNo, row.personName ?? "", ""]);
   }
 
   const s4 = wb.addWorksheet("未安排人员");
@@ -218,7 +218,6 @@ export async function exportSceneWord(scene: ExportScene, fileBase?: string): Pr
       tableHeader: true,
       children: [
         new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: "座位号", bold: true })] })] }),
-        new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: "方位", bold: true })] })] }),
         new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: "姓名", bold: true })] })] }),
       ],
     });
@@ -227,7 +226,6 @@ export async function exportSceneWord(scene: ExportScene, fileBase?: string): Pr
         new TableRow({
           children: [
             new TableCell({ children: [new Paragraph(String(s.seatNo))] }),
-            new TableCell({ children: [new Paragraph(s.roleLabel ?? "")] }),
             new TableCell({ children: [new Paragraph(s.personName ?? "")] }),
           ],
         }),
@@ -345,7 +343,7 @@ export async function exportScenePpt(scene: ExportScene, fileBase?: string): Pro
       const col = idx % cols;
       const x = 0.4 + col * cellW;
       const y = 1.15 + row * rowH;
-      slide.addText(`${s.seatNo} · ${s.roleLabel ?? ""}`, {
+      slide.addText(`${s.seatNo}`, {
         x,
         y,
         w: cellW - 0.08,
