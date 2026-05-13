@@ -96,10 +96,16 @@ export function TopToolbar() {
     if (busy) return;
     setBusy(true);
     try {
-      const layout = roundPlanToLayout(getPlan());
+      const cur = getPlan();
+      const layout = roundPlanToLayout(cur);
+      const pid = cur.planId;
       await saveLayoutSnapshot(layout);
-    } catch {
-      window.alert("保存失败：请确认在桌面版中运行或稍后重试。");
+      if (isLinkableBackendPlanId(pid)) {
+        await pushRoundPlanToBackend(pid, cur);
+      }
+      window.alert("方案已保存");
+    } catch (e) {
+      window.alert(e instanceof ApiError ? `保存失败：${e.message}` : "保存失败：请确认在桌面版中运行或稍后重试。");
     } finally {
       setBusy(false);
     }

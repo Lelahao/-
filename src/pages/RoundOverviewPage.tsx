@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type DragEvent } from "react";
 import { flushSync } from "react-dom";
 import { useLocation, useNavigate } from "react-router-dom";
+import { ApiError } from "@/api/client";
 import { getPlanDetail, type PeopleImportResult } from "@/api/plans";
 import { RoundTableCard } from "@/components/RoundTableCard";
 import { RoundVersionHistoryDrawer } from "@/components/RoundVersionHistoryDrawer";
@@ -147,12 +148,13 @@ export function RoundOverviewPage() {
       } catch {
         /* ignore */
       }
-      const planIdForSnapshot = nav?.planId ?? linkedId ?? "from-layout";
       const navPlanId = nav?.planId;
+      const targetId = navPlanId ?? linkedId;
 
-      if (navPlanId && isLinkableBackendPlanId(navPlanId)) {
+      // 优先：用 navPlanId / linkedId 主动从 backend 拉取真数据，避免 localStorage 残留
+      if (targetId && isLinkableBackendPlanId(targetId)) {
         try {
-          const detail = await getPlanDetail(navPlanId);
+          const detail = await getPlanDetail(targetId);
           if (cancelled) return;
           const layout = planDetailToLayoutSnapshot(detail);
           try {
@@ -162,22 +164,56 @@ export function RoundOverviewPage() {
           } catch {
             /* ignore */
           }
-          setPlan(layoutToRoundPlan(layout, navPlanId));
+          setPlan(layoutToRoundPlan(layout, targetId));
           try {
             await saveLayoutSnapshot(layout);
           } catch {
             /* ignore */
           }
           return;
-        } catch {
-          /* 后端不可用时回退本机快照 */
+        } catch (err) {
+          // 方案已被删除 → 清理 lsLinked + snapshot，进入空状态
+          if (err instanceof ApiError && err.status === 404) {
+            try {
+              localStorage.removeItem(ROUND_LINKED_PLAN_STORAGE);
+              localStorage.removeItem(ROUND_LINKED_PLAN_NAME_STORAGE);
+            } catch {
+              /* ignore */
+            }
+            try {
+              await saveLayoutSnapshot({ people: [], tables: [] });
+            } catch {
+              /* ignore */
+            }
+            if (cancelled) return;
+            setPlan({ planId: "empty-overview", tables: [], people: [], seats: [] });
+            return;
+          }
+          /* 网络错误等：保持当前 store 状态不变，避免无端覆盖 */
+          return;
         }
       }
 
+      // 完全没有 linked / nav plan id → 真正的"无方案"空状态
+      if (!targetId) {
+        try {
+          await saveLayoutSnapshot({ people: [], tables: [] });
+        } catch {
+          /* ignore */
+        }
+        if (cancelled) return;
+        setPlan({ planId: "empty-overview", tables: [], people: [], seats: [] });
+        return;
+      }
+
+      // targetId 存在但非 linkable（极少出现的兜底）：退回旧 localStorage 行为
       const snap = await loadLayoutSnapshot();
       if (cancelled) return;
-      if (!snap?.tables?.length && !snap?.people?.length) return;
-      setPlan(layoutToRoundPlan(snap, planIdForSnapshot));
+      if (!snap?.tables?.length && !snap?.people?.length) {
+        setPlan({ planId: "empty-overview", tables: [], people: [], seats: [] });
+        return;
+      }
+      setPlan(layoutToRoundPlan(snap, targetId));
     })();
     return () => {
       cancelled = true;
@@ -334,6 +370,9 @@ export function RoundOverviewPage() {
     setDraggingPersonId(null);
   };
 
+  const isEmptyOverview =
+    plan.planId === "empty-overview" || (plan.tables.length === 0 && plan.people.length === 0);
+
   const unassignedOverflow = unassignedCount > UNASSIGNED_PREVIEW_MAX ? unassignedCount - UNASSIGNED_PREVIEW_MAX : 0;
   const unassignedShown =
     unassignedCount <= UNASSIGNED_PREVIEW_MAX || unassignedExpanded
@@ -365,6 +404,38 @@ export function RoundOverviewPage() {
     }
     setPersonManageReloadKey((k) => k + 1);
   };
+
+  if (isEmptyOverview) {
+    return (
+      <div className="flex min-h-[60vh] items-center justify-center px-4 py-12">
+        <div className={`${cardShell} w-full max-w-md px-8 py-10 text-center`}>
+          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-orange-50 text-2xl text-orange-500">
+            桌
+          </div>
+          <h2 className="text-lg font-semibold text-slate-900">暂无方案</h2>
+          <p className="mt-2 text-sm text-slate-600">
+            还没有任何排座方案。请到「方案管理」新建方案后，再返回这里查看圆桌总览。
+          </p>
+          <div className="mt-6 flex justify-center gap-2">
+            <button
+              type="button"
+              onClick={() => navigate("/plans", { state: { openRoundManage: true } })}
+              className="inline-flex items-center rounded-lg border border-orange-500 bg-orange-500 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-orange-600"
+            >
+              去方案管理新建方案
+            </button>
+            <button
+              type="button"
+              onClick={() => navigate("/plans")}
+              className="inline-flex items-center rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+            >
+              打开方案管理
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <>

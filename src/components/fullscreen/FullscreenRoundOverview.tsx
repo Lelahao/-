@@ -30,8 +30,16 @@ import { loadLayoutSnapshot, saveLayoutSnapshot } from "@/fullscreen/roundStorag
 import type { LayoutSnapshot, PersonRecord, SeatDragData, TableDefinition } from "@/fullscreen/types";
 import { layoutToRoundPlan, planDetailToLayoutSnapshot, roundPlanToLayout } from "@/lib/layoutBridge";
 import { isLinkableBackendPlanId } from "@/lib/roundBackendPlanId";
-import { getPlanDetail, unassignPerson as unassignPersonApi, type PeopleImportResult } from "@/api/plans";
+import { ApiError } from "@/api/client";
+import {
+  getPlanDetail,
+  unassignPerson as unassignPersonApi,
+  createPlanVersion,
+  listPlanVersions,
+  type PeopleImportResult,
+} from "@/api/plans";
 import { saveTables } from "@/api/tables";
+import { pushRoundPlanToBackend } from "@/lib/syncRoundPlanToBackend";
 import { useRoundPersonSearchStore, roundPersonSearchMatches } from "@/stores/roundPersonSearchStore";
 import { useRoundPlanDemoStore } from "@/stores/roundPlanDemoStore";
 import { DEFAULT_EXPORT_PLAN_NAME } from "@/features/export/exportScene";
@@ -118,6 +126,10 @@ export function FullscreenRoundOverview() {
   const [capacityEditTarget, setCapacityEditTarget] = useState<
     { planId: string; table: TableDefinition } | null
   >(null);
+  const [saveVersionOpen, setSaveVersionOpen] = useState(false);
+  const [versionName, setVersionName] = useState("");
+  const [versionNote, setVersionNote] = useState("");
+  const [versionBusy, setVersionBusy] = useState(false);
 
   const plan = useRoundPlanDemoStore((s) => s.plan);
   const setPlan = useRoundPlanDemoStore((s) => s.setPlan);
@@ -275,6 +287,90 @@ export function FullscreenRoundOverview() {
       unassigned: unassigned.length,
     }),
     [tables.length, people, unassigned],
+  );
+
+  /** 从本地 people/tables 构造一份"准备保存为版本"的 RoundPlanSnapshot（含 planId） */
+  const composeRoundPlanForVersion = (targetPid: string) => {
+    const snapshot = normalizeLayoutSnapshot({ people, tables });
+    return { snapshot, roundPlan: layoutToRoundPlan(snapshot, targetPid) };
+  };
+
+  const resolveBackendPid = (): string | null => {
+    if (isLinkableBackendPlanId(plan.planId)) return plan.planId;
+    try {
+      const linked = localStorage.getItem(ROUND_LINKED_PLAN_STORAGE);
+      if (linked && isLinkableBackendPlanId(linked)) return linked;
+    } catch {
+      /* ignore */
+    }
+    return null;
+  };
+
+  const openSaveVersionModal = async () => {
+    if (versionBusy) return;
+    const pid = resolveBackendPid();
+    if (!pid) {
+      window.alert(
+        "保存版本需要关联已保存的后端方案。\n请从「方案管理」中选择方案并进入圆桌总览；并确认本地后端已启动。",
+      );
+      return;
+    }
+    setVersionBusy(true);
+    try {
+      const versions = await listPlanVersions(pid);
+      const nextNo = versions.reduce((m, v) => Math.max(m, v.versionNo), 0) + 1;
+      setVersionName(`V${nextNo} 当前排座方案`);
+      setVersionNote("");
+      setSaveVersionOpen(true);
+    } catch (e) {
+      window.alert(e instanceof ApiError ? e.message : "无法加载版本列表，请确认后端已启动。");
+    } finally {
+      setVersionBusy(false);
+    }
+  };
+
+  const closeSaveVersionModal = () => {
+    if (versionBusy) return;
+    setSaveVersionOpen(false);
+  };
+
+  const confirmSaveVersion = async () => {
+    if (versionBusy) return;
+    const name = versionName.trim();
+    if (!name) {
+      window.alert("版本名称不能为空");
+      return;
+    }
+    const pid = resolveBackendPid();
+    if (!pid) return;
+    setVersionBusy(true);
+    try {
+      const { snapshot, roundPlan } = composeRoundPlanForVersion(pid);
+      await saveLayoutSnapshot(snapshot);
+      await pushRoundPlanToBackend(pid, roundPlan);
+      await createPlanVersion(pid, { versionName: name, note: versionNote.trim() || null });
+      setPlan(roundPlan);
+      setSaveVersionOpen(false);
+      window.alert("版本已保存");
+    } catch (e) {
+      window.alert(e instanceof ApiError ? e.message : "保存版本失败");
+    } finally {
+      setVersionBusy(false);
+    }
+  };
+
+  const versionStats = useMemo(
+    () => ({
+      tableCount: tables.length,
+      peopleCount: people.filter((p) => !isReservedPlaceholderPersonName(p.name)).length,
+      assignedCount: people.filter(
+        (p) => p.assignedTableId && p.assignedSeatNo != null && !isReservedPlaceholderPersonName(p.name),
+      ).length,
+      unassignedCount: people.filter(
+        (p) => (!p.assignedTableId || p.assignedSeatNo == null) && !isReservedPlaceholderPersonName(p.name),
+      ).length,
+    }),
+    [tables, people],
   );
 
   const onSave = async () => {
@@ -436,8 +532,13 @@ export function FullscreenRoundOverview() {
                 +
               </button>
             </div>
-            <button type="button" className={btnBase} onClick={onSave} disabled={saving}>
-              保存方案
+            <button
+              type="button"
+              className={btnBase}
+              onClick={() => void openSaveVersionModal()}
+              disabled={versionBusy || saving}
+            >
+              {versionBusy ? "处理中…" : "保存版本"}
             </button>
             <button
               type="button"
@@ -754,6 +855,88 @@ export function FullscreenRoundOverview() {
           setImportResult(null);
         }}
       />
+
+      {saveVersionOpen ? (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 p-4"
+          role="presentation"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) closeSaveVersionModal();
+          }}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl border border-slate-200/90 bg-white shadow-[0_8px_40px_rgb(15_23_42_/_0.15)]"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="fs-save-version-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="border-b border-slate-200/80 px-6 py-4">
+              <h2 id="fs-save-version-title" className="text-lg font-semibold text-slate-900">
+                保存方案版本
+              </h2>
+            </div>
+            <div className="space-y-4 px-6 py-4">
+              <div className="grid grid-cols-2 gap-2 rounded-xl border border-slate-100 bg-slate-50/90 px-3 py-3 text-sm text-slate-700">
+                <div>
+                  <span className="text-slate-500">桌数</span>
+                  <div className="font-semibold text-slate-900">{versionStats.tableCount}</div>
+                </div>
+                <div>
+                  <span className="text-slate-500">总人数</span>
+                  <div className="font-semibold text-slate-900">{versionStats.peopleCount}</div>
+                </div>
+                <div>
+                  <span className="text-slate-500">已安排</span>
+                  <div className="font-semibold text-slate-900">{versionStats.assignedCount}</div>
+                </div>
+                <div>
+                  <span className="text-slate-500">未安排</span>
+                  <div className="font-semibold text-slate-900">{versionStats.unassignedCount}</div>
+                </div>
+              </div>
+              <div>
+                <label htmlFor="fs-save-version-name" className="block text-xs font-medium text-slate-600">
+                  版本名称
+                </label>
+                <input
+                  id="fs-save-version-name"
+                  type="text"
+                  className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-200"
+                  value={versionName}
+                  onChange={(e) => setVersionName(e.target.value)}
+                  autoComplete="off"
+                />
+              </div>
+              <div>
+                <label htmlFor="fs-save-version-note" className="block text-xs font-medium text-slate-600">
+                  版本备注（可选）
+                </label>
+                <textarea
+                  id="fs-save-version-note"
+                  rows={2}
+                  className="mt-1 w-full resize-y rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-200"
+                  value={versionNote}
+                  onChange={(e) => setVersionNote(e.target.value)}
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 border-t border-slate-200/80 px-6 py-4">
+              <button type="button" className={btnBase} onClick={closeSaveVersionModal} disabled={versionBusy}>
+                取消
+              </button>
+              <button
+                type="button"
+                className={btnPrimary}
+                onClick={() => void confirmSaveVersion()}
+                disabled={versionBusy}
+              >
+                {versionBusy ? "保存中…" : "保存版本"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
