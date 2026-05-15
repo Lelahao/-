@@ -47,7 +47,6 @@ const CARD_RING_R = 42;
 const CARD_BORDER_R = 44;
 const CARD_NUMBER_R = 30;
 const CARD_NAME_R = 62;
-const CARD_ROLE_R = 71;
 
 function truncateSubtitle(s: string, max: number): string {
   if (s.length <= max) return s;

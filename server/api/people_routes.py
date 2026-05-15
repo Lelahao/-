@@ -89,26 +89,27 @@ def _parse_people_xlsx(data: bytes) -> list[tuple[str, str, str, str]]:
                 if hs in labels:
                     header_map[key] = i
                     break
-        for k in ("name", "region", "position", "role"):
-            if k not in header_map:
-                raise ValueError(f"missing column: {k}")
+        if "name" not in header_map:
+            raise ValueError("missing column: name")
+
+        def cell(row: tuple[Any, ...] | None, key: str) -> str:
+            if row is None or key not in header_map:
+                return ""
+            idx = header_map[key]
+            if idx >= len(row):
+                return ""
+            v = row[idx]
+            return "" if v is None else str(v).strip()
 
         out: list[tuple[str, str, str, str]] = []
         for row in rows_iter:
             if row is None:
                 continue
 
-            def cell(key: str) -> str:
-                idx = header_map[key]
-                if idx >= len(row):
-                    return ""
-                v = row[idx]
-                return "" if v is None else str(v).strip()
-
-            name = cell("name")
-            region = cell("region")
-            position = cell("position")
-            role = cell("role")
+            name = cell(row, "name")
+            region = cell(row, "region")
+            position = cell(row, "position")
+            role = cell(row, "role")
             if not name and not region and not position and not role:
                 continue
             out.append((name, region, position, role))

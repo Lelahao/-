@@ -8,7 +8,9 @@ import { isLinkableBackendPlanId } from "@/lib/roundBackendPlanId";
 const SHEET_DATA = "人员导入";
 const SHEET_HELP = "填写说明";
 
-const HEADER_NEED = ["姓名", "区域", "岗位", "角色"] as const;
+/** 表头必须出现的列（仅姓名）；区域/岗位/角色见 HEADER_OPTIONAL */
+const HEADER_REQUIRED = ["姓名"] as const;
+const HEADER_OPTIONAL = ["区域", "岗位", "角色"] as const;
 
 function sanitizePlanBasename(name: string): string {
   const t = name.trim() || "方案";
@@ -69,17 +71,21 @@ export async function validatePeopleImportFile(file: File): Promise<ValidatePeop
     return { ok: false, message: "空文件，无可导入人员" };
   }
   const header = (rows[0] ?? []).map((c) => String(c ?? "").trim());
-  const idx: Record<(typeof HEADER_NEED)[number], number> = {
+  const idx: Record<(typeof HEADER_REQUIRED)[number] | (typeof HEADER_OPTIONAL)[number], number> = {
     姓名: -1,
     区域: -1,
     岗位: -1,
     角色: -1,
   };
-  for (const key of HEADER_NEED) {
+  for (const key of HEADER_REQUIRED) {
     const i = header.indexOf(key);
     if (i < 0) {
       return { ok: false, message: `表头缺少必填列「${key}」，请使用系统模板` };
     }
+    idx[key] = i;
+  }
+  for (const key of HEADER_OPTIONAL) {
+    const i = header.indexOf(key);
     idx[key] = i;
   }
   let dataRows = 0;
@@ -87,9 +93,9 @@ export async function validatePeopleImportFile(file: File): Promise<ValidatePeop
     const row = rows[r] as unknown[];
     if (!row) continue;
     const name = String(row[idx["姓名"]] ?? "").trim();
-    const region = String(row[idx["区域"]] ?? "").trim();
-    const position = String(row[idx["岗位"]] ?? "").trim();
-    const role = String(row[idx["角色"]] ?? "").trim();
+    const region = idx["区域"] >= 0 ? String(row[idx["区域"]] ?? "").trim() : "";
+    const position = idx["岗位"] >= 0 ? String(row[idx["岗位"]] ?? "").trim() : "";
+    const role = idx["角色"] >= 0 ? String(row[idx["角色"]] ?? "").trim() : "";
     if (!name && !region && !position && !role) continue;
     dataRows++;
     if (!name) {
