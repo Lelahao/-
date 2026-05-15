@@ -39,3 +39,17 @@ release-icon-test-*/
 release-final/win-unpacked/排座助手.exe
 release-final/排座助手-Setup-0.1.0.exe
 release-final/排座助手-Setup-0.1.0.exe.blockmap
+
+# 本地脚本输出结果，不提交
+scripts/out/
+
+# 本地数据库，不提交
+server/data/
+*.db
+*.sqlite
+*.sqlite3
+
+# 日志，不提交
+*.log
+debug-*.log
+backend.log
