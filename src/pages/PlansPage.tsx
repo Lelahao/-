@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate, useLocation } from "react-router-dom";
 import * as XLSX from "xlsx";
 import { ApiError } from "@/api/client";
@@ -2300,8 +2301,9 @@ export function PlansPage() {
         提示：方案数据保存在本地，建议定期导出备份，确保数据安全。
       </footer>
 
-      {showNewPlan ? (
-        <div
+      {showNewPlan
+        ? createPortal(
+            <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"
           role="presentation"
           onClick={(e) => {
@@ -2397,8 +2399,10 @@ export function PlansPage() {
               </div>
             </div>
           </div>
-        </div>
-      ) : null}
+        </div>,
+            document.body,
+          )
+        : null}
 
       {showCopyPlan ? (
         <div

@@ -30,15 +30,12 @@ __pycache__/
 warn-*.txt
 pyi-runtime*
 
-# 调试和测试用的构建产物（仅保留 release-final）
+# 调试和测试用的构建产物
 release-debug/
 release-debug-*/
 release-icon-test-*/
-
-# release-final 中超过 GitHub 100MB 单文件限制的产物
-release-final/win-unpacked/排座助手.exe
-release-final/排座助手-Setup-0.1.0.exe
-release-final/排座助手-Setup-0.1.0.exe.blockmap
+release-final/
+release-fresh/
 
 # 本地脚本输出结果，不提交
 scripts/out/
